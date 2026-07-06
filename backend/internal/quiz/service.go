@@ -221,6 +221,8 @@ func (s *Service) SubmitAttempt(ctx context.Context, attemptID, userID int64, an
 
 	total := len(orderedQuestions)
 	correct, wrong, skipped := 0, 0, 0
+	answerRows := make([]attemptAnswerRow, 0, total)
+	answeredAt := time.Now().UTC()
 
 	for _, questionID := range orderedQuestions {
 		selected, provided := selectedByQuestion[questionID]
@@ -240,16 +242,15 @@ func (s *Service) SubmitAttempt(ctx context.Context, attemptID, userID int64, an
 			isCorrect = &f
 		}
 
-		var selectedValue any
-		if provided && selected != nil {
-			selectedValue = *selected
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO quiz_attempt_answers (attempt_id, question_id, selected_option_id, is_correct, answered_at)
-			VALUES ($1, $2, $3, $4, now())
-		`, attemptID, questionID, selectedValue, isCorrect); err != nil {
-			return nil, err
-		}
+		answerRows = append(answerRows, attemptAnswerRow{
+			questionID: questionID,
+			selected:   selected,
+			isCorrect:  isCorrect,
+		})
+	}
+
+	if err := insertAttemptAnswers(ctx, tx, attemptID, answerRows, answeredAt); err != nil {
+		return nil, err
 	}
 
 	score := scorePercent(correct, total)
@@ -282,8 +283,8 @@ func (s *Service) SubmitAttempt(ctx context.Context, attemptID, userID int64, an
 		return nil, err
 	}
 
-	// A new completed attempt changes the user's analytics; drop the cache.
-	s.invalidateAnalytics(ctx, userID)
+	// Don't block the submit response on cache invalidation.
+	go s.invalidateAnalytics(context.Background(), userID)
 
 	return &AttemptResult{
 		AttemptID:      attemptID,
@@ -488,10 +489,15 @@ func (s *Service) loadResult(ctx context.Context, tx pgx.Tx, attemptID int64) (*
 // quizAnswerKey returns the correct option per question and the ordered question IDs.
 func quizAnswerKey(ctx context.Context, tx pgx.Tx, quizID int64) (map[int64]*int64, []int64, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT ques.id,
-		       (SELECT o.id FROM question_options o WHERE o.question_id = ques.id AND o.is_correct = true LIMIT 1)
+		SELECT ques.id, correct_opt.id
 		FROM quiz_questions qq
 		JOIN questions ques ON ques.id = qq.question_id
+		LEFT JOIN LATERAL (
+			SELECT o.id
+			FROM question_options o
+			WHERE o.question_id = ques.id AND o.is_correct = true
+			LIMIT 1
+		) correct_opt ON true
 		WHERE qq.quiz_id = $1
 		ORDER BY qq.order_no ASC
 	`, quizID)
@@ -515,6 +521,32 @@ func quizAnswerKey(ctx context.Context, tx pgx.Tx, quizID int64) (map[int64]*int
 		return nil, nil, err
 	}
 	return correctByQuestion, ordered, nil
+}
+
+type attemptAnswerRow struct {
+	questionID int64
+	selected   *int64
+	isCorrect  *bool
+}
+
+func insertAttemptAnswers(ctx context.Context, tx pgx.Tx, attemptID int64, rows []attemptAnswerRow, answeredAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	_, err := tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"quiz_attempt_answers"},
+		[]string{"attempt_id", "question_id", "selected_option_id", "is_correct", "answered_at"},
+		pgx.CopyFromSlice(len(rows), func(i int) ([]any, error) {
+			row := rows[i]
+			var selected any
+			if row.selected != nil {
+				selected = *row.selected
+			}
+			return []any{attemptID, row.questionID, selected, row.isCorrect, answeredAt}, nil
+		}),
+	)
+	return err
 }
 
 func scorePercent(correct, total int) float64 {

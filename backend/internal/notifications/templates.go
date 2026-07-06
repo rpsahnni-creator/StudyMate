@@ -16,6 +16,7 @@ const (
 	TmplPracticeReminder TemplateID = "practice_reminder"
 	TmplWelcome          TemplateID = "welcome"
 	TmplPasswordReset    TemplateID = "password_reset"
+	TmplEmailOTP         TemplateID = "email_otp"
 )
 
 // Template holds rendered push and email content.
@@ -65,16 +66,21 @@ var templateDefs = map[TemplateID]templateDef{
 		EmailText: "Keep your streak going with a quick quiz today.",
 	},
 	TmplWelcome: {
-		PushTitle: "Welcome to StudyApp 👋",
-		PushBody:  "Scan your textbook and start learning with AI-powered quizzes.",
-		EmailSubj: "Welcome to StudyApp",
-		EmailHTML: "<h2>Welcome!</h2><p>Scan your textbook and start learning with AI-powered quizzes.</p>",
-		EmailText: "Welcome to StudyApp! Scan your textbook and start learning with AI-powered quizzes.",
+		PushTitle: "Welcome to StudyMate 👋",
+		PushBody:  "Your account is ready. Start scanning chapters and learning smarter.",
+		EmailSubj: "Welcome to StudyMate — account confirmed",
+		EmailHTML: "<h2>Welcome to StudyMate!</h2><p>Hi {{.name}},</p><p>Your student account has been created successfully.</p><ul><li><strong>Email:</strong> {{.email}}</li><li><strong>Class:</strong> {{.class}}</li></ul><p>You can now sign in and start scanning chapters with AI-powered quizzes.</p>",
+		EmailText: "Hi {{.name}},\n\nYour StudyMate account is confirmed.\nEmail: {{.email}}\nClass: {{.class}}\n\nSign in and start learning smarter every day.",
 	},
 	TmplPasswordReset: {
 		EmailSubj: "Reset your StudyApp password",
 		EmailHTML: "<h2>Password Reset</h2><p>Hi {{.name}},</p><p>We received a request to reset your password. Click the link below to choose a new password. This link expires in {{.expiryMinutes}} minutes.</p><p><a href='{{.resetUrl}}'>Reset Password</a></p><p>If you did not request this, you can safely ignore this email.</p>",
 		EmailText: "Hi {{.name}},\n\nReset your StudyApp password using this link (expires in {{.expiryMinutes}} minutes):\n{{.resetUrl}}\n\nIf you did not request this, ignore this email.",
+	},
+	TmplEmailOTP: {
+		EmailSubj: "Your StudyMate verification code",
+		EmailHTML: "<h2>Verify your email</h2><p>Use this one-time code to complete your StudyMate registration:</p><p style='font-size:28px;font-weight:700;letter-spacing:6px'>{{.otp}}</p><p>This code expires in {{.expiryMinutes}} minutes.</p><p>If you did not request this, you can ignore this email.</p>",
+		EmailText: "Your StudyMate verification code is {{.otp}}.\nIt expires in {{.expiryMinutes}} minutes.",
 	},
 }
 

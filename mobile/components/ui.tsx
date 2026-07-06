@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Image,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -19,9 +21,9 @@ function tapFeedback() {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
 }
 
-export function Card({ style, children, ...rest }: ViewProps) {
+export function Card({ style, glass, children, ...rest }: ViewProps & { glass?: boolean }) {
   return (
-    <View style={[styles.card, style]} {...rest}>
+    <View style={[styles.card, glass ? styles.cardGlass : null, style]} {...rest}>
       {children}
     </View>
   );
@@ -50,6 +52,7 @@ export function PrimaryButton({
   disabled,
   icon,
   style,
+  labelColor,
 }: {
   title: string;
   onPress: () => void;
@@ -57,8 +60,10 @@ export function PrimaryButton({
   disabled?: boolean;
   icon?: IoniconName;
   style?: object;
+  labelColor?: string;
 }) {
   const isDisabled = disabled || loading;
+  const textColor = labelColor ?? colors.white;
   return (
     <Pressable
       onPress={() => {
@@ -74,11 +79,11 @@ export function PrimaryButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={colors.white} />
+        <ActivityIndicator color={textColor} />
       ) : (
         <View style={styles.btnContent}>
-          {icon ? <Ionicons name={icon} size={17} color={colors.white} /> : null}
-          <Text style={styles.primaryText}>{title}</Text>
+          {icon ? <Ionicons name={icon} size={17} color={textColor} /> : null}
+          <Text style={[styles.primaryText, { color: textColor }]}>{title}</Text>
         </View>
       )}
     </Pressable>
@@ -176,6 +181,64 @@ export function PasswordField({
   );
 }
 
+export function BoardSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label?: string;
+  value: string;
+  options: { id: string; label: string }[];
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.id === value);
+
+  return (
+    <View style={styles.field}>
+      {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
+      <Pressable
+        onPress={() => {
+          tapFeedback();
+          setOpen(true);
+        }}
+        style={styles.selectTrigger}
+      >
+        <Text style={styles.selectValue}>{selected?.label ?? "Select board"}</Text>
+        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.selectBackdrop} onPress={() => setOpen(false)}>
+          <Pressable style={styles.selectSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.selectSheetTitle}>{label ?? "Board"}</Text>
+            {options.map((option) => {
+              const active = option.id === value;
+              return (
+                <Pressable
+                  key={option.id}
+                  onPress={() => {
+                    tapFeedback();
+                    onChange(option.id);
+                    setOpen(false);
+                  }}
+                  style={[styles.selectOption, active ? styles.selectOptionActive : null]}
+                >
+                  <Text style={[styles.selectOptionText, active ? styles.selectOptionTextActive : null]}>
+                    {option.label}
+                  </Text>
+                  {active ? <Ionicons name="checkmark" size={18} color={colors.brandDark} /> : null}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
 export function Checkbox({
   checked,
   onToggle,
@@ -201,16 +264,27 @@ export function Checkbox({
   );
 }
 
-export function LogoMark({ size = 40 }: { size?: number }) {
+export function LogoMark({
+  size = 40,
+  width,
+  height,
+  style,
+}: {
+  size?: number;
+  width?: number;
+  height?: number;
+  style?: object;
+}) {
+  const imageWidth = width ?? size;
+  const imageHeight = height ?? size;
+
   return (
-    <View
-      style={[
-        styles.logo,
-        { width: size, height: size, borderRadius: size * 0.3 },
-      ]}
-    >
-      <Text style={[styles.logoText, { fontSize: size * 0.5 }]}>S</Text>
-    </View>
+    <Image
+      source={require("../assets/images/kiji_logo.png")}
+      style={[{ width: imageWidth, height: imageHeight }, style]}
+      resizeMode="contain"
+      accessibilityLabel="Kiji Technology"
+    />
   );
 }
 
@@ -222,6 +296,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     ...shadow.sm,
+  },
+  cardGlass: {
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    borderColor: "rgba(255, 255, 255, 0.95)",
   },
   badge: {
     alignSelf: "flex-start",
@@ -275,6 +353,50 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: "center",
   },
+  selectTrigger: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  selectValue: { fontSize: 16, fontWeight: "600", color: colors.text },
+  selectBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "flex-end",
+  },
+  selectSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.xs,
+    ...shadow.md,
+  },
+  selectSheetTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  selectOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+  },
+  selectOptionActive: { backgroundColor: colors.brandSoft },
+  selectOptionText: { fontSize: 16, fontWeight: "600", color: colors.text },
+  selectOptionTextActive: { color: colors.brandDark, fontWeight: "800" },
   checkRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -298,11 +420,4 @@ const styles = StyleSheet.create({
   checkboxOn: { backgroundColor: colors.brand, borderColor: colors.brand },
   checkMark: { color: colors.white, fontSize: 14, fontWeight: "900" },
   checkLabel: { flex: 1, fontSize: 13.5, color: colors.textMuted, lineHeight: 20 },
-  logo: {
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.brand,
-  },
-  logoText: { color: colors.white, fontWeight: "800" },
 });

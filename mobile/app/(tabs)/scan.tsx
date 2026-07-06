@@ -13,11 +13,14 @@ import {
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
-import { apiCall, getAccessToken } from "../../lib/auth";
-import { Card, Checkbox, Field, PrimaryButton, SecondaryButton } from "../../components/ui";
+import { apiCall, formatApiErrorBody, getAccessToken } from "../../lib/auth";
+import { Card, BoardSelect, Checkbox, Field, PrimaryButton, SecondaryButton } from "../../components/ui";
+import { BOARD_OPTIONS } from "../../lib/boards";
 import { colors, radius, shadow, spacing } from "../../lib/theme";
 import { useImagePicker, type ImageResult } from "../../hooks/useImagePicker";
-import { uploadMultiplePages } from "../../lib/resumableUpload";
+import { uploadMultiplePages, MAX_PAGES_PER_SCAN } from "../../lib/resumableUpload";
+import { assertServerReachable } from "../../lib/network";
+import { API_URL } from "../../lib/config";
 import {
   enqueueUpload,
   getQueuedUploads,
@@ -25,12 +28,27 @@ import {
   removeUpload,
   shouldRetry,
   updateUpload,
+  sortQueueNewestFirst,
   type QueuedUpload,
 } from "../../lib/uploadQueue";
 import { pollScanJobStatus, jobStageLabel, isJobReady, setScanJobStrategy, type ScanUploadStatus } from "../../lib/scan";
 import { getMySubscription, planDisplayName, scansLabel, type Entitlements } from "../../lib/billing";
+import { SkyBackground } from "../../components/SkyBackground";
+import { skyScreen } from "../../lib/skyScreen";
 
-const MAX_DRAFT_PAGES = 8;
+const MAX_DRAFT_PAGES = MAX_PAGES_PER_SCAN;
+
+function updateQueueEntry(
+  items: QueuedUpload[],
+  id: string,
+  patch: Partial<QueuedUpload>
+): QueuedUpload[] {
+  return sortQueueNewestFirst(
+    items.map((entry) =>
+      entry.id === id ? { ...entry, ...patch, updatedAt: new Date().toISOString() } : entry
+    )
+  );
+}
 
 function isPermanentFailure(message?: string): boolean {
   if (!message) return false;
@@ -77,7 +95,7 @@ function CaptureButton({
 export default function ScanScreen() {
   const { pickFromCamera, pickFromGallery } = useImagePicker();
   const [mode, setMode] = useState("chapter");
-  const [board, setBoard] = useState("ncert");
+  const [board, setBoard] = useState("cbse");
   const [chapterTitle, setChapterTitle] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [queue, setQueue] = useState<QueuedUpload[]>([]);
@@ -150,9 +168,7 @@ export default function ScanScreen() {
       const label = jobStageLabel(jobStatus.status);
       setStatus(`Job ${jobId}: ${label}`);
       void updateUpload(queueId, { status: "processing", stageLabel: label });
-      setQueue((prev) =>
-        prev.map((entry) => (entry.id === queueId ? { ...entry, status: "processing", stageLabel: label } : entry))
-      );
+      setQueue((prev) => updateQueueEntry(prev, queueId, { status: "processing", stageLabel: label }));
     };
 
     const handleNeedsStrategy = async () => {
@@ -202,9 +218,11 @@ export default function ScanScreen() {
         if (isJobReady(finalStatus.status)) {
           await updateUpload(queueId, { status: "ready", quizId: finalStatus.quiz_id, progress: 100 });
           setQueue((prev) =>
-            prev.map((entry) =>
-              entry.id === queueId ? { ...entry, status: "ready", quizId: finalStatus.quiz_id } : entry
-            )
+            updateQueueEntry(prev, queueId, {
+              status: "ready",
+              quizId: finalStatus.quiz_id,
+              progress: 100,
+            })
           );
           setStatus("Quiz ready!");
           if (finalStatus.quiz_id) {
@@ -220,9 +238,11 @@ export default function ScanScreen() {
           const message = finalStatus.last_error || "Scan processing failed on the server";
           await updateUpload(queueId, { status: "failed", lastError: message, jobId: undefined });
           setQueue((prev) =>
-            prev.map((entry) =>
-              entry.id === queueId ? { ...entry, status: "failed", lastError: message, jobId: undefined } : entry
-            )
+            updateQueueEntry(prev, queueId, {
+              status: "failed",
+              lastError: message,
+              jobId: undefined,
+            })
           );
           setStatus(message);
         }
@@ -294,6 +314,15 @@ export default function ScanScreen() {
       return;
     }
 
+    try {
+      await assertServerReachable();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Server unreachable";
+      Alert.alert("Server connect nahi ho paaya", message);
+      setStatus(message);
+      return;
+    }
+
     setIsUploading(true);
     setUploadProgress(0);
     const pageCount = pagesToUpload.length;
@@ -324,7 +353,7 @@ export default function ScanScreen() {
           page_no: pageCount,
         },
       });
-      setQueue((prev) => [...prev, queueItem]);
+      setQueue((prev) => sortQueueNewestFirst([queueItem, ...prev]));
     }
 
     try {
@@ -345,13 +374,14 @@ export default function ScanScreen() {
         const data = (await response.json()) as {
           error?: string;
           message?: string;
+          details?: Record<string, string>;
           job?: { id?: number };
         };
         if (!response.ok) {
           if (response.status === 429) {
             throw new Error("Daily scan limit reached. Upgrade your plan for more scans.");
           }
-          throw new Error(data.error ?? data.message ?? `Request failed (${response.status})`);
+          throw new Error(formatApiErrorBody(data));
         }
         jobId = data.job?.id;
         if (!jobId) {
@@ -364,23 +394,39 @@ export default function ScanScreen() {
       setStatus(`Uploading ${pageCount} page(s) to job ${jobId}...`);
 
       const urisForUpload = queueItem.imageUris?.length ? queueItem.imageUris : allUris;
+      const resumeFrom = queueItem.uploadedPageCount ?? 0;
 
-      await uploadMultiplePages(urisForUpload, String(jobId), token, (percent, pageIndex, total) => {
-        setUploadProgress(percent);
-        setStatus(`Uploading page ${pageIndex + 1} of ${total}…`);
-        void updateUpload(queueItem.id, { status: "uploading", progress: percent });
-        setQueue((prev) =>
-          prev.map((entry) =>
-            entry.id === queueItem.id ? { ...entry, status: "uploading", progress: percent, jobId } : entry
-          )
-        );
+      if (resumeFrom > 0) {
+        setStatus(`Resuming upload from page ${resumeFrom + 1} of ${urisForUpload.length}...`);
+      }
+
+      const uploadedCount = await uploadMultiplePages(
+        urisForUpload,
+        String(jobId),
+        token,
+        (percent, pageIndex, total) => {
+          setUploadProgress(percent);
+          setStatus(`Uploading page ${pageIndex + 1} of ${total}…`);
+          void updateUpload(queueItem.id, { status: "uploading", progress: percent });
+          setQueue((prev) =>
+            updateQueueEntry(prev, queueItem.id, { status: "uploading", progress: percent, jobId })
+          );
+        },
+        {
+          startFromPageIndex: resumeFrom,
+          onPageComplete: (pageIndex) => {
+            void updateUpload(queueItem.id, { uploadedPageCount: pageIndex + 1, progress: undefined });
+          },
+        }
+      );
+
+      await updateUpload(queueItem.id, {
+        status: "processing",
+        progress: 100,
+        uploadedPageCount: uploadedCount,
       });
-
-      await updateUpload(queueItem.id, { status: "processing", progress: 100 });
       setQueue((prev) =>
-        prev.map((entry) =>
-          entry.id === queueItem.id ? { ...entry, status: "processing", progress: 100 } : entry
-        )
+        updateQueueEntry(prev, queueItem.id, { status: "processing", progress: 100 })
       );
       setUploadProgress(100);
       setDraftPages([]);
@@ -394,11 +440,11 @@ export default function ScanScreen() {
         lastError: message,
       });
       setQueue((prev) =>
-        prev.map((entry) =>
-          entry.id === queueItem.id
-            ? { ...entry, status: "failed", attempts: entry.attempts + 1, lastError: message }
-            : entry
-        )
+        updateQueueEntry(prev, queueItem.id, {
+          status: "failed",
+          attempts: queueItem.attempts + 1,
+          lastError: message,
+        })
       );
       setStatus(message);
       Alert.alert("Upload failed", message);
@@ -431,10 +477,8 @@ export default function ScanScreen() {
     if (item.payload.chapter_title) {
       setChapterTitle(item.payload.chapter_title);
     }
-    await updateUpload(id, { status: "queued", progress: 0 });
-    setQueue((prev) =>
-      prev.map((entry) => (entry.id === id ? { ...entry, status: "queued", progress: 0 } : entry))
-    );
+    await updateUpload(id, { status: "queued", progress: 0, uploadedPageCount: item.uploadedPageCount ?? 0 });
+    setQueue((prev) => updateQueueEntry(prev, id, { status: "queued", progress: 0 }));
     await startUpload(item.jobId, id);
   }
   retryUploadRef.current = retryUpload;
@@ -446,7 +490,7 @@ export default function ScanScreen() {
 
   const networkHint = useMemo(() => {
     return Platform.OS === "ios" || Platform.OS === "android"
-      ? "Chunked uploads · auto-retry on slow networks"
+      ? `Up to ${MAX_DRAFT_PAGES} pages · auto-retry · same Wi‑Fi as PC`
       : "Low-bandwidth mode enabled";
   }, []);
 
@@ -459,9 +503,9 @@ export default function ScanScreen() {
   const canCapture = !isUploading && !isPickingImage && draftPages.length < MAX_DRAFT_PAGES;
 
   return (
+    <SkyBackground>
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.hero}>
-        <View style={styles.heroGlow} />
+      <View style={[skyScreen.heroCard, styles.hero]}>
         <View style={styles.heroContent}>
           <View style={styles.heroIconWrap}>
             <Ionicons name="scan-outline" size={28} color={colors.white} />
@@ -481,7 +525,7 @@ export default function ScanScreen() {
         ) : null}
       </View>
 
-      <Card style={styles.formCard}>
+      <Card glass style={styles.formCard}>
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Chapter details</Text>
           <Text style={styles.sectionSub}>NCERT & state-board chapters</Text>
@@ -502,7 +546,7 @@ export default function ScanScreen() {
               Chapter scan
             </Text>
             <Text style={[styles.modeChipHint, mode === "chapter" ? styles.modeChipHintActive : null]}>
-              20 MCQ · 20 fill · 10 T/F
+              Page se related questions (flexible count)
             </Text>
           </Pressable>
           <Pressable
@@ -519,17 +563,17 @@ export default function ScanScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.row}>
-          <View style={styles.half}>
-            <Field label="Board" value={board} onChangeText={setBoard} placeholder="ncert" />
-          </View>
-          <View style={styles.half}>
-            <Field label="Chapter" value={chapterTitle} onChangeText={setChapterTitle} placeholder="e.g. Interjections" />
-          </View>
-        </View>
+        <BoardSelect
+          label="Board"
+          value={board}
+          options={BOARD_OPTIONS}
+          onChange={setBoard}
+        />
+
+        <Field label="Chapter" value={chapterTitle} onChangeText={setChapterTitle} placeholder="e.g. Interjections" />
 
         <Text style={styles.stubHint}>
-          Dev mode: photo se text tabhi aayega jab Google Vision / Tesseract OCR enable ho. Abhi chapter name likhna zaroori hai.
+          Production scan: backend .env me OCR_PROVIDER=gemini_vision + GEMINI_API_KEY set karo. Chapter name likhna helpful hai.
         </Text>
 
         <Checkbox
@@ -629,13 +673,16 @@ export default function ScanScreen() {
             <Text style={styles.progressPct}>{uploadProgress}%</Text>
           </View>
         </View>
+        <Text style={styles.serverMeta} numberOfLines={1}>
+          Server: {API_URL}
+        </Text>
       </Card>
 
       {queue.length > 0 ? (
         <View style={styles.queueSection}>
-          <Text style={styles.queueHeading}>Upload queue</Text>
+          <Text style={styles.queueHeading}>Recent quizzes</Text>
           {queue.map((item) => (
-            <Card key={item.id} style={styles.item}>
+            <Card glass key={item.id} style={styles.item}>
               <View style={styles.itemHead}>
                 <Text style={styles.itemName} numberOfLines={1}>
                   {item.fileName}
@@ -681,6 +728,7 @@ export default function ScanScreen() {
         </View>
       ) : null}
     </ScrollView>
+    </SkyBackground>
   );
 }
 
@@ -701,65 +749,48 @@ function StatusPill({ status }: { status: string }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  container: { paddingBottom: 40 },
+  screen: { flex: 1 },
+  container: { paddingHorizontal: spacing.xl, paddingTop: spacing.lg, paddingBottom: 40, gap: spacing.lg },
   hero: {
-    backgroundColor: colors.brandDark,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xl,
-    borderBottomLeftRadius: radius.xl,
-    borderBottomRightRadius: radius.xl,
-    overflow: "hidden",
-    marginBottom: spacing.lg,
-    ...shadow.md,
-  },
-  heroGlow: {
-    position: "absolute",
-    top: -40,
-    right: -30,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: colors.accent,
-    opacity: 0.35,
+    marginBottom: 0,
   },
   heroContent: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   heroIconWrap: {
     width: 52,
     height: 52,
     borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    ...shadow.brand,
   },
   heroText: { flex: 1, gap: 4 },
-  heroTitle: { fontSize: 24, fontWeight: "800", color: colors.white, letterSpacing: -0.3 },
-  heroSub: { fontSize: 13.5, color: "rgba(255,255,255,0.82)", lineHeight: 19 },
+  heroTitle: { fontSize: 24, fontWeight: "800", color: "#0F172A", letterSpacing: -0.3 },
+  heroSub: { fontSize: 13.5, color: "#64748B", lineHeight: 19 },
   planPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginTop: spacing.lg,
-    backgroundColor: "rgba(255,255,255,0.14)",
+    marginTop: spacing.sm,
+    backgroundColor: "rgba(240, 180, 41, 0.12)",
     borderRadius: radius.full,
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(240, 180, 41, 0.28)",
   },
   planBadge: {
     backgroundColor: colors.white,
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: "#FCD34D",
   },
-  planBadgeText: { fontSize: 11, fontWeight: "800", color: colors.brandDark },
-  planScans: { fontSize: 13, fontWeight: "700", color: colors.white },
-  formCard: { marginHorizontal: spacing.xl, gap: spacing.lg, ...shadow.md },
+  planBadgeText: { fontSize: 11, fontWeight: "800", color: "#B45309" },
+  planScans: { fontSize: 13, fontWeight: "700", color: "#334155" },
+  formCard: { gap: spacing.lg, ...shadow.md },
   sectionHead: { gap: 2 },
   sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.text },
   sectionSub: { fontSize: 13, color: colors.textMuted },
@@ -902,6 +933,7 @@ const styles = StyleSheet.create({
   emptyPreviewText: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
   emptyPreviewHint: { fontSize: 12.5, color: colors.textSubtle, textAlign: "center", paddingHorizontal: spacing.xl },
   meta: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  serverMeta: { color: colors.textSubtle, fontSize: 11, marginTop: spacing.xs },
   progressSection: { gap: 8 },
   progressTrack: {
     height: 8,
@@ -913,7 +945,7 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
   status: { fontWeight: "700", fontSize: 14, flex: 1, lineHeight: 20 },
   progressPct: { fontWeight: "800", fontSize: 14, color: colors.brandDark },
-  queueSection: { marginHorizontal: spacing.xl, marginTop: spacing.xl, gap: spacing.md },
+  queueSection: { marginTop: spacing.sm, gap: spacing.md },
   queueHeading: { fontSize: 16, fontWeight: "800", color: colors.text },
   item: { gap: 10 },
   itemHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },

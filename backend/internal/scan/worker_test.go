@@ -68,6 +68,7 @@ func TestWorkerProcessJobStatusTransitions(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		WorkerConfig{MinConfidence: 0.5, MaxPagesPerJob: 10},
 	)
 
@@ -90,7 +91,7 @@ func TestWorkerSkipsNonPendingJob(t *testing.T) {
 		job: ScanJob{ID: 1, Status: ScanJobQuizReady},
 	}
 	provider, _ := ocr.NewProvider(ocr.OCRConfig{Provider: ocr.ProviderStub})
-	worker := NewWorker(repo, nil, nil, storage.NewLocalClient(), provider, nil, nil, nil, nil, WorkerConfig{})
+	worker := NewWorker(repo, nil, nil, storage.NewLocalClient(), provider, nil, nil, nil, nil, nil, WorkerConfig{})
 	if err := worker.ProcessJob(context.Background(), 1); err != nil {
 		t.Fatalf("expected skip without error, got %v", err)
 	}

@@ -16,6 +16,7 @@ export interface QueuedUpload {
   stageLabel?: string;
   imageUri?: string;
   imageUris?: string[];
+  uploadedPageCount?: number;
   payload: {
     mode: string;
     board: string;
@@ -29,18 +30,26 @@ const STORAGE_KEY = 'studyapp.upload.queue';
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 2000;
 
+export function sortQueueNewestFirst(items: QueuedUpload[]): QueuedUpload[] {
+  return [...items].sort((a, b) => {
+    const aTime = Date.parse(a.updatedAt || a.createdAt);
+    const bTime = Date.parse(b.updatedAt || b.createdAt);
+    return bTime - aTime;
+  });
+}
+
 export async function getQueuedUploads(): Promise<QueuedUpload[]> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as QueuedUpload[];
+    return sortQueueNewestFirst(JSON.parse(raw) as QueuedUpload[]);
   } catch {
     return [];
   }
 }
 
 export async function saveQueuedUploads(items: QueuedUpload[]): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sortQueueNewestFirst(items)));
 }
 
 export async function enqueueUpload(upload: Omit<QueuedUpload, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'progress' | 'attempts'>): Promise<QueuedUpload> {
@@ -58,7 +67,7 @@ export async function enqueueUpload(upload: Omit<QueuedUpload, 'id' | 'createdAt
     payload: upload.payload,
   };
   const existing = await getQueuedUploads();
-  existing.push(item);
+  existing.unshift(item);
   await saveQueuedUploads(existing);
   return item;
 }

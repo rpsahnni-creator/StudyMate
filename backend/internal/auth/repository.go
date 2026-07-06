@@ -20,6 +20,14 @@ type Repository interface {
 	CreatePasswordResetToken(ctx context.Context, token *PasswordResetToken) error
 	GetPasswordResetToken(ctx context.Context, token string) (*PasswordResetToken, error)
 	MarkPasswordResetTokenUsed(ctx context.Context, token string) error
+	DeleteEmailOTPsForEmail(ctx context.Context, email string) error
+	CreateEmailOTP(ctx context.Context, otp *EmailVerificationOTP) error
+	GetLatestEmailOTP(ctx context.Context, email string) (*EmailVerificationOTP, error)
+	IncrementEmailOTPAttempts(ctx context.Context, id int64) error
+	MarkEmailOTPVerified(ctx context.Context, id int64, verificationToken string, tokenExpiresAt time.Time) error
+	GetVerifiedEmailOTPByToken(ctx context.Context, email, verificationToken string) (*EmailVerificationOTP, error)
+	DeleteEmailOTPsForEmailAfterUse(ctx context.Context, email string) error
+	CreateUserProfile(ctx context.Context, userID int64, classLevel string) error
 }
 
 // PostgresRepository implements Repository using PostgreSQL.
@@ -40,15 +48,24 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, user *User) (int64,
 		RETURNING id
 	`
 
+	role := user.Role
+	if role == "" {
+		role = "student"
+	}
+	status := user.Status
+	if status == "" {
+		status = "active"
+	}
+
 	var userID int64
 	err := r.pool.QueryRow(ctx, query,
 		user.Name,
 		user.Email,
 		user.Phone,
 		user.PasswordHash,
-		"student", // default role
-		"active",  // default status
-		false,     // email not verified on registration
+		role,
+		status,
+		user.EmailVerified,
 		time.Now(),
 		time.Now(),
 	).Scan(&userID)
@@ -235,6 +252,118 @@ func (r *PostgresRepository) MarkPasswordResetTokenUsed(ctx context.Context, tok
 	_, err := r.pool.Exec(ctx, query, token)
 	if err != nil {
 		return fmt.Errorf("failed to mark password reset token used: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) DeleteEmailOTPsForEmail(ctx context.Context, email string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM email_verification_otps WHERE email = $1`, email)
+	if err != nil {
+		return fmt.Errorf("failed to delete email otps: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) CreateEmailOTP(ctx context.Context, otp *EmailVerificationOTP) error {
+	query := `
+		INSERT INTO email_verification_otps (email, otp_hash, attempts, verified, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id
+	`
+	return r.pool.QueryRow(ctx, query,
+		otp.Email,
+		otp.OTPHash,
+		otp.Attempts,
+		otp.Verified,
+		otp.ExpiresAt,
+		otp.CreatedAt,
+	).Scan(&otp.ID)
+}
+
+func (r *PostgresRepository) GetLatestEmailOTP(ctx context.Context, email string) (*EmailVerificationOTP, error) {
+	query := `
+		SELECT id, email, otp_hash, attempts, verified, verification_token, token_expires_at, expires_at, created_at
+		FROM email_verification_otps
+		WHERE email = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+	otp := &EmailVerificationOTP{}
+	err := r.pool.QueryRow(ctx, query, email).Scan(
+		&otp.ID,
+		&otp.Email,
+		&otp.OTPHash,
+		&otp.Attempts,
+		&otp.Verified,
+		&otp.VerificationToken,
+		&otp.TokenExpiresAt,
+		&otp.ExpiresAt,
+		&otp.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest email otp: %w", err)
+	}
+	return otp, nil
+}
+
+func (r *PostgresRepository) IncrementEmailOTPAttempts(ctx context.Context, id int64) error {
+	_, err := r.pool.Exec(ctx, `UPDATE email_verification_otps SET attempts = attempts + 1 WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("failed to increment otp attempts: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) MarkEmailOTPVerified(ctx context.Context, id int64, verificationToken string, tokenExpiresAt time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE email_verification_otps
+		SET verified = true, verification_token = $1, token_expires_at = $2
+		WHERE id = $3
+	`, verificationToken, tokenExpiresAt, id)
+	if err != nil {
+		return fmt.Errorf("failed to mark email otp verified: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetVerifiedEmailOTPByToken(ctx context.Context, email, verificationToken string) (*EmailVerificationOTP, error) {
+	query := `
+		SELECT id, email, otp_hash, attempts, verified, verification_token, token_expires_at, expires_at, created_at
+		FROM email_verification_otps
+		WHERE email = $1 AND verification_token = $2 AND verified = true
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+	otp := &EmailVerificationOTP{}
+	err := r.pool.QueryRow(ctx, query, email, verificationToken).Scan(
+		&otp.ID,
+		&otp.Email,
+		&otp.OTPHash,
+		&otp.Attempts,
+		&otp.Verified,
+		&otp.VerificationToken,
+		&otp.TokenExpiresAt,
+		&otp.ExpiresAt,
+		&otp.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get verified email otp: %w", err)
+	}
+	return otp, nil
+}
+
+func (r *PostgresRepository) DeleteEmailOTPsForEmailAfterUse(ctx context.Context, email string) error {
+	return r.DeleteEmailOTPsForEmail(ctx, email)
+}
+
+func (r *PostgresRepository) CreateUserProfile(ctx context.Context, userID int64, classLevel string) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO user_profiles (user_id, class_level)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE SET class_level = EXCLUDED.class_level
+	`, userID, classLevel)
+	if err != nil {
+		return fmt.Errorf("failed to create user profile: %w", err)
 	}
 	return nil
 }

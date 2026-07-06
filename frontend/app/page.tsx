@@ -12,6 +12,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "../components/AuthProvider";
 import { FeatureGate } from "../components/FeatureGate";
+import { StudyMateWord } from "../components/StudyMateWord";
 
 export default function DashboardPage() {
   const { isLoggedIn, user } = useAuth();
@@ -19,63 +20,25 @@ export default function DashboardPage() {
   return (
     <main style={styles.page}>
       <section style={styles.hero} className="animate-in">
-        <span
-          className="glow-orb"
-          style={{
-            width: 420,
-            height: 420,
-            top: -180,
-            left: "50%",
-            marginLeft: -340,
-            background:
-              "radial-gradient(circle, rgba(99,102,241,0.28), rgba(99,102,241,0) 70%)",
-            animation: "floatSlow 12s ease-in-out infinite",
-          }}
-        />
-        <span
-          className="glow-orb"
-          style={{
-            width: 360,
-            height: 360,
-            top: -120,
-            left: "50%",
-            marginLeft: 60,
-            background:
-              "radial-gradient(circle, rgba(168,85,247,0.22), rgba(168,85,247,0) 70%)",
-            animation: "floatSlower 14s ease-in-out infinite",
-          }}
-        />
-
         <div style={styles.heroInner}>
-          <span style={styles.eyebrow}>
-            <Sparkles size={13} strokeWidth={2.5} />
-            AI-powered study companion
-          </span>
           <h1 style={styles.heroTitle}>
-            {isLoggedIn && user?.name ? (
-              <>
-                Welcome back,{" "}
-                <span style={styles.gradientText}>{user.name.split(" ")[0]}</span>
-              </>
-            ) : (
-              <>
-                Scan. Practice.{" "}
-                <span style={styles.gradientText}>Improve.</span>
-              </>
-            )}
+            <StudyMateWord size="lg" />
           </h1>
+          <p style={styles.tagline}>Learn Smarter Every Day</p>
           <p style={styles.heroSub}>
-            Turn any NCERT or state-board chapter into smart quizzes, track your
-            progress with rich analytics, and master your weak topics — all in one place.
+            {isLoggedIn && user?.name ? (
+              <>Welcome back, <strong style={{ color: "#fff" }}>{user.name.split(" ")[0]}</strong>. </>
+            ) : null}
+            AI quizzes, track progress, and master weak topics.
           </p>
           <div style={styles.heroCta}>
-            <Link href="/scan" className="btn btn-primary" style={styles.ctaPrimary}>
+            <Link href="/scan" className="btn btn-gold" style={styles.ctaPrimary}>
               Start scanning
               <ArrowRight size={17} strokeWidth={2.4} />
             </Link>
             <Link href="/reports" className="btn btn-ghost" style={styles.ctaGhost}>
               <BarChart3 size={17} strokeWidth={2.2} />
-              View my reports
+              View reports
             </Link>
           </div>
         </div>
@@ -99,7 +62,7 @@ export default function DashboardPage() {
         <ActionCard
           href="/plans"
           icon={Star}
-          accent="linear-gradient(135deg,#f59e0b,#f43f5e)"
+          accent="linear-gradient(135deg,#f0b429,#f59e0b)"
           title="Plans & Billing"
           desc="Unlock unlimited scans and advanced AI quizzes."
         />
@@ -114,15 +77,15 @@ export default function DashboardPage() {
         </FeatureGate>
       </section>
 
-      <section style={styles.stripe} className="card">
-        <Sparkles size={140} strokeWidth={1} style={styles.stripeDecor} aria-hidden />
+      <section className="glass-panel" style={styles.stripe}>
+        <Sparkles size={120} strokeWidth={1} style={styles.stripeDecor} aria-hidden />
         <div style={styles.stripeContent}>
           <h2 style={styles.stripeTitle}>Ready to level up your prep?</h2>
           <p style={styles.stripeSub}>
             Consistent daily practice is the fastest way to raise your scores.
           </p>
         </div>
-        <Link href="/scan" className="btn btn-primary" style={styles.stripeCta}>
+        <Link href="/scan" className="btn btn-gold" style={styles.stripeCta}>
           Create a quiz
           <ArrowRight size={17} strokeWidth={2.4} />
         </Link>
@@ -164,62 +127,41 @@ const styles: Record<string, React.CSSProperties> = {
   page: {
     maxWidth: 1120,
     margin: "0 auto",
-    padding: "40px 20px 64px",
+    padding: "32px 20px 64px",
     display: "grid",
-    gap: 44,
+    gap: 40,
   },
   hero: {
-    position: "relative",
     textAlign: "center",
-    padding: "40px 0 16px",
-    overflow: "hidden",
+    padding: "12px 0 8px",
   },
   heroInner: {
-    position: "relative",
-    zIndex: 1,
     display: "grid",
-    gap: 18,
+    gap: 14,
     justifyItems: "center",
   },
-  eyebrow: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 7,
-    padding: "6px 14px",
-    borderRadius: 999,
-    background: "var(--brand-50)",
-    color: "var(--brand-700)",
-    fontSize: 13,
-    fontWeight: 650,
-    border: "1px solid var(--brand-100)",
-  },
   heroTitle: {
-    fontSize: "clamp(34px, 6vw, 58px)",
-    fontWeight: 850,
     margin: 0,
-    maxWidth: 780,
-    letterSpacing: "-0.03em",
   },
-  gradientText: {
-    background: "var(--brand-gradient)",
-    WebkitBackgroundClip: "text",
-    backgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    color: "transparent",
+  tagline: {
+    margin: 0,
+    fontSize: 16,
+    color: "rgba(255,255,255,0.72)",
+    letterSpacing: "0.02em",
   },
   heroSub: {
-    fontSize: 18,
+    fontSize: 17,
     color: "var(--text-muted)",
     margin: 0,
-    maxWidth: 620,
-    lineHeight: 1.6,
+    maxWidth: 560,
+    lineHeight: 1.65,
   },
   heroCta: {
     display: "flex",
     gap: 12,
     flexWrap: "wrap",
     justifyContent: "center",
-    marginTop: 6,
+    marginTop: 8,
   },
   ctaPrimary: {
     padding: "13px 24px",
@@ -240,7 +182,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 16,
     padding: 22,
     textDecoration: "none",
-    color: "var(--text)",
+    color: "#0f172a",
   },
   actionIcon: {
     position: "relative",
@@ -262,18 +204,19 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "0 0 4px",
     fontSize: 17,
     fontWeight: 750,
+    color: "#0f172a",
   },
   actionDesc: {
     margin: 0,
     fontSize: 13.5,
-    color: "var(--text-muted)",
+    color: "#64748b",
     lineHeight: 1.5,
   },
   actionArrow: {
     position: "relative",
     zIndex: 1,
     marginLeft: "auto",
-    color: "var(--text-subtle)",
+    color: "#94a3b8",
     display: "inline-flex",
   },
   stripe: {
@@ -283,17 +226,16 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 20,
-    padding: "30px 32px",
-    background: "var(--brand-gradient-soft)",
+    padding: "28px 30px",
     flexWrap: "wrap",
   },
   stripeDecor: {
     position: "absolute",
-    right: -20,
+    right: -10,
     top: "50%",
     transform: "translateY(-50%)",
-    color: "var(--brand-500)",
-    opacity: 0.08,
+    color: "var(--gold)",
+    opacity: 0.12,
   },
   stripeContent: {
     position: "relative",

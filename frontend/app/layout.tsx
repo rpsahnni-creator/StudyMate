@@ -1,30 +1,34 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Outfit } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "../components/AuthProvider";
 import { AppNav } from "../components/AppNav";
+import { AppShell } from "../components/AppShell";
 import { FeatureFlagsProvider } from "../lib/featureFlags";
 
-const inter = Inter({
+const outfit = Outfit({
   subsets: ["latin"],
+  weight: ["300", "800"],
   display: "swap",
-  variable: "--font-sans",
+  variable: "--font-display",
 });
 
 export const metadata: Metadata = {
-  title: "StudyApp — Scan, Practice, Improve",
+  title: "StudyMate — Learn Smarter Every Day",
   description:
-    "Scan NCERT & state-board chapters, generate AI quizzes, and track your performance analytics.",
+    "Scan NCERT & state-board chapters, generate AI quizzes, and track your performance with StudyMate by Kiji Technology.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={outfit.variable}>
       <body>
         <AuthProvider>
           <FeatureFlagsProvider>
-            <AppNav />
-            {children}
+            <AppShell>
+              <AppNav />
+              {children}
+            </AppShell>
           </FeatureFlagsProvider>
         </AuthProvider>
       </body>

@@ -283,6 +283,18 @@ func (c *CacheService) logCacheEvent(ctx context.Context, contentHash string, me
 	}
 }
 
+// PurgeAll removes all quiz cache rows from Postgres (used when switching to gemini_vision).
+func (c *CacheService) PurgeAll(ctx context.Context) (int64, error) {
+	if c.db == nil {
+		return 0, nil
+	}
+	tag, err := c.db.Exec(ctx, `DELETE FROM content_cache`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // Invalidate removes a cache entry from Postgres and Valkey (admin use).
 func (c *CacheService) Invalidate(ctx context.Context, contentHash string) error {
 	if contentHash == "" {
@@ -328,7 +340,7 @@ func nullIfEmptyStr(value string) any {
 	return value
 }
 
-const contentCacheVersion = "stub-v3"
+const contentCacheVersion = "vision-v1"
 
 // ContentCacheHash returns SHA256 of normalized OCR text for cache keys.
 func ContentCacheHash(rawText string) string {

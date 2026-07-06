@@ -9,9 +9,15 @@ import {
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { SkyBackground } from "../../components/SkyBackground";
 import { useGoals, useMyGoal } from "../../hooks/useCareerGoals";
 import type { CareerGoal, MyGoal } from "../../lib/careerGoals";
+import { skyScreen } from "../../lib/skyScreen";
 import { colors, radius, shadow, spacing } from "../../lib/theme";
+
+function ScreenWrap({ children }: { children: React.ReactNode }) {
+  return <SkyBackground>{children}</SkyBackground>;
+}
 
 export default function GoalsScreen() {
   const myGoal = useMyGoal();
@@ -24,45 +30,60 @@ export default function GoalsScreen() {
     }, [])
   );
 
-  // The backend owns flag gating; a 403 surfaces as `gated`.
   if (myGoal.gated || goals.gated) {
-    return <ComingSoon />;
+    return (
+      <ScreenWrap>
+        <ComingSoon />
+      </ScreenWrap>
+    );
   }
 
   if (myGoal.loading && !myGoal.data) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.muted}>Loading your goal…</Text>
-      </View>
+      <ScreenWrap>
+        <View style={skyScreen.center}>
+          <ActivityIndicator size="large" color={colors.brand} />
+          <Text style={styles.muted}>Loading your goal…</Text>
+        </View>
+      </ScreenWrap>
     );
   }
 
   if (myGoal.error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{myGoal.error}</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={myGoal.reload}>
-          <Text style={styles.primaryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <ScreenWrap>
+        <View style={skyScreen.center}>
+          <Text style={styles.error}>{myGoal.error}</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={myGoal.reload}>
+            <Text style={styles.primaryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </ScreenWrap>
     );
   }
 
   if (myGoal.data) {
-    return <ActiveGoalView goal={myGoal.data} />;
+    return (
+      <ScreenWrap>
+        <ActiveGoalView goal={myGoal.data} />
+      </ScreenWrap>
+    );
   }
 
-  return <ChooseGoalView goals={goals} />;
+  return (
+    <ScreenWrap>
+      <ChooseGoalView goals={goals} />
+    </ScreenWrap>
+  );
 }
 
 function ComingSoon() {
   return (
-    <View style={styles.center}>
+    <View style={skyScreen.center}>
       <View style={styles.comingSoonIcon}>
         <Ionicons name="flag" size={30} color={colors.brandDark} />
       </View>
-      <Text style={styles.title}>Coming Soon</Text>
+      <Text style={skyScreen.title}>Coming Soon</Text>
       <Text style={[styles.muted, styles.comingSoonText]}>
         Career goals and daily practice are on the way. Check back shortly!
       </Text>
@@ -73,8 +94,8 @@ function ComingSoon() {
 function ChooseGoalView({ goals }: { goals: ReturnType<typeof useGoals> }) {
   if (goals.loading && !goals.data) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
+      <View style={skyScreen.center}>
+        <ActivityIndicator size="large" color={colors.brand} />
         <Text style={styles.muted}>Loading goals…</Text>
       </View>
     );
@@ -83,11 +104,9 @@ function ChooseGoalView({ goals }: { goals: ReturnType<typeof useGoals> }) {
   const list = goals.data ?? [];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.hero}>Choose Your Goal</Text>
-      <Text style={styles.muted}>
-        Pick an exam to unlock a personalized daily practice plan.
-      </Text>
+    <ScrollView style={styles.screen} contentContainerStyle={skyScreen.content}>
+      <Text style={skyScreen.title}>Choose Your Goal</Text>
+      <Text style={skyScreen.lead}>Pick an exam to unlock a personalized daily practice plan.</Text>
 
       {goals.error ? <Text style={styles.error}>{goals.error}</Text> : null}
 
@@ -129,8 +148,8 @@ function ActiveGoalView({ goal }: { goal: MyGoal }) {
   const days = goal.daysRemaining;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.goalHeader}>
+    <ScrollView style={styles.screen} contentContainerStyle={skyScreen.content}>
+      <View style={[styles.card, styles.goalHeader]}>
         <Text style={styles.title}>{goal.name}</Text>
         <Text style={styles.badge}>{goal.examName || "Exam"}</Text>
         {goal.targetDate ? (
@@ -189,10 +208,10 @@ function TodayCard({ progress }: { progress: MyGoal["progress"] }) {
   );
 }
 
+const glass = skyScreen.glass;
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 20, gap: 14 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24, backgroundColor: colors.bg },
+  screen: { flex: 1 },
   comingSoonIcon: {
     width: 64,
     height: 64,
@@ -203,17 +222,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   comingSoonText: { textAlign: "center", maxWidth: 280 },
-  hero: { fontSize: 26, fontWeight: "800", color: colors.text },
   title: { fontSize: 23, fontWeight: "800", color: colors.text },
   muted: { color: colors.textMuted, lineHeight: 20 },
   error: { color: colors.danger },
   card: {
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.lg,
     padding: 18,
     gap: 8,
-    backgroundColor: colors.surface,
+    ...glass,
     ...shadow.sm,
   },
   cardTitle: { fontSize: 18, fontWeight: "800", color: colors.text },
@@ -256,12 +273,11 @@ const styles = StyleSheet.create({
   streakBox: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.lg,
     padding: 16,
     alignItems: "center",
     gap: 4,
-    backgroundColor: colors.surface,
+    ...glass,
     ...shadow.sm,
   },
   streakValue: { fontSize: 26, fontWeight: "800", color: "#ea580c" },
@@ -280,13 +296,13 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: colors.white, fontWeight: "700", fontSize: 16 },
   secondaryButton: {
-    backgroundColor: colors.surface,
+    ...glass,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
     borderRadius: radius.md,
     paddingVertical: 13,
     paddingHorizontal: 20,
     alignItems: "center",
+    ...shadow.sm,
   },
   secondaryButtonText: { color: colors.text, fontWeight: "700", fontSize: 16 },
 });

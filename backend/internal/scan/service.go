@@ -227,9 +227,9 @@ func validateContentScope(board string) error {
 	if board == "" {
 		return nil
 	}
-	normalized := strings.ToLower(strings.TrimSpace(board))
+	normalized := NormalizeBoard(board)
 	switch normalized {
-	case "ncert", "state board", "state-board", "stateboard", "cbse", "icse":
+	case "ncert", "cbse", "icse", "jharkhand_board", "bihar_board", "state_board":
 		return nil
 	default:
 		return ErrUnsupportedContentScope

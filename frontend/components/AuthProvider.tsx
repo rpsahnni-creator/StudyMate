@@ -76,6 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadUser]);
 
   useEffect(() => {
+    if (!user && isLoggedIn()) {
+      const cached = getStoredUser();
+      if (cached) setUser(cached);
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (!isLoggedIn()) return;
 
     const expiresAt = getTokenExpiresAt();
@@ -132,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
-      isLoggedIn: isLoggedIn(),
+      isLoggedIn: user != null || isLoggedIn(),
       isLoading,
       login,
       logout,

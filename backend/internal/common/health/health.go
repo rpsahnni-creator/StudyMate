@@ -163,5 +163,15 @@ func (p *Prober) checkAIProvider() CheckResult {
 	if p.AIProviderName == "" && p.OCRProviderName == "" {
 		return CheckResult{Status: "degraded", Message: "provider not configured"}
 	}
-	return CheckResult{Status: "ok", Message: p.AIProviderName}
+	msg := p.AIProviderName
+	if p.OCRProviderName != "" {
+		if p.OCRProviderName == "gemini_vision" {
+			msg = "scan=gemini_vision (page image)"
+		} else if p.OCRProviderName == "stub" {
+			msg = "scan=stub (dev fake OCR — NOT for real scans)"
+		} else {
+			msg = "scan=" + p.OCRProviderName + " ai=" + p.AIProviderName
+		}
+	}
+	return CheckResult{Status: "ok", Message: msg}
 }

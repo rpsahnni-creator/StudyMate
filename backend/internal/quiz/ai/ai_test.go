@@ -79,6 +79,44 @@ func TestParseAndValidateRejectsBadMCQOptions(t *testing.T) {
 	}
 }
 
+func TestParseAndValidateFlexibleSkipsInvalidFillBlank(t *testing.T) {
+	raw := []rawQuestion{
+		{
+			Text:         "Plants make food using _____.",
+			Type:         QuestionTypeFillBlank,
+			Options:      nil,
+			CorrectIndex: 0,
+		},
+		{
+			Text:         "Which gas do plants release?",
+			Type:         QuestionTypeMCQ,
+			Options:      []rawOption{{Label: "A", Text: "Oxygen"}, {Label: "B", Text: "Nitrogen"}, {Label: "C", Text: "Carbon dioxide"}, {Label: "D", Text: "Hydrogen"}},
+			CorrectIndex: 0,
+		},
+	}
+	got, err := parseAndValidate(raw, 0)
+	if err != nil {
+		t.Fatalf("flexible mode should keep valid questions: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 valid question, got %d", len(got))
+	}
+	if got[0].Type != QuestionTypeMCQ {
+		t.Fatalf("expected mcq to survive, got %s", got[0].Type)
+	}
+}
+
+func TestParseAndValidateFlexibleFailsWhenAllInvalid(t *testing.T) {
+	raw := []rawQuestion{{
+		Text:    "bad fill blank",
+		Type:    QuestionTypeFillBlank,
+		Options: nil,
+	}}
+	if _, err := parseAndValidate(raw, 0); err == nil {
+		t.Fatal("expected error when every question is invalid")
+	}
+}
+
 func TestExtractJSONArrayStripsFences(t *testing.T) {
 	in := "```json\n[{\"a\":1}]\n```"
 	out := extractJSONArray(in)

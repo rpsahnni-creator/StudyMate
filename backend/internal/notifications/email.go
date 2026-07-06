@@ -55,8 +55,15 @@ func (c *StubClient) SendTransactional(ctx context.Context, req EmailRequest) er
 		c.logger.Info("email stub send",
 			"to", req.To,
 			"subject", req.Subject,
+			"text", req.Text,
 			"tags", req.Tags,
 		)
+		for _, tag := range req.Tags {
+			if tag == "registration_otp" {
+				c.logger.Warn("REGISTRATION OTP (stub — not sent to inbox)", "to", req.To, "text", req.Text)
+				break
+			}
+		}
 	}
 	return nil
 }

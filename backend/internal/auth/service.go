@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,6 +21,8 @@ type jwtClaims struct {
 
 // Service provides authentication business logic.
 type Service interface {
+	SendRegistrationOTP(ctx context.Context, email string) (*SendRegistrationOTPResponse, error)
+	VerifyRegistrationOTP(ctx context.Context, req *VerifyRegistrationOTPRequest) (*VerifyRegistrationOTPResponse, error)
 	Register(ctx context.Context, req *RegisterRequest) (*TokenResponse, error)
 	Login(ctx context.Context, req *LoginRequest) (*TokenResponse, error)
 	ChangePassword(ctx context.Context, userID int64, req *ChangePasswordRequest) error
@@ -31,21 +35,28 @@ type Service interface {
 
 // AuthService implements the Service interface.
 type AuthService struct {
-	repo          Repository
-	jwtSecret     string
-	tokenTTL      time.Duration
-	refreshTTL    time.Duration
-	resetMailer   ResetEmailSender
+	repo              Repository
+	jwtSecret         string
+	tokenTTL          time.Duration
+	refreshTTL        time.Duration
+	resetMailer       ResetEmailSender
+	registrationMailer RegistrationEmailSender
+	otpTTL            time.Duration
+	verificationTTL   time.Duration
 }
+
+const maxOTPAttempts = 5
 
 
 // NewAuthService creates a new authentication service.
 func NewAuthService(repo Repository, jwtSecret string) *AuthService {
 	return &AuthService{
-		repo:       repo,
-		jwtSecret:  jwtSecret,
-		tokenTTL:   15 * time.Minute,   // Short-lived access token
-		refreshTTL: 7 * 24 * time.Hour, // 7-day refresh token
+		repo:            repo,
+		jwtSecret:       jwtSecret,
+		tokenTTL:        15 * time.Minute,
+		refreshTTL:      7 * 24 * time.Hour,
+		otpTTL:          10 * time.Minute,
+		verificationTTL: 30 * time.Minute,
 	}
 }
 
@@ -55,14 +66,137 @@ func (s *AuthService) WithPasswordResetMailer(mailer ResetEmailSender) *AuthServ
 	return s
 }
 
+// WithRegistrationMailer configures signup OTP and welcome email delivery.
+func (s *AuthService) WithRegistrationMailer(mailer RegistrationEmailSender) *AuthService {
+	s.registrationMailer = mailer
+	return s
+}
+
+// SendRegistrationOTP emails a one-time code for new student signups.
+func (s *AuthService) SendRegistrationOTP(ctx context.Context, email string) (*SendRegistrationOTPResponse, error) {
+	normalized, err := ValidateEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	if existing, err := s.repo.GetUserByEmail(ctx, normalized); err == nil && existing != nil {
+		return nil, errors.New("email already registered")
+	}
+	if s.registrationMailer == nil {
+		return nil, fmt.Errorf("registration email is not configured")
+	}
+
+	otp, err := GenerateNumericOTP()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate otp: %w", err)
+	}
+	if err := s.repo.DeleteEmailOTPsForEmail(ctx, normalized); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if err := s.repo.CreateEmailOTP(ctx, &EmailVerificationOTP{
+		Email:     normalized,
+		OTPHash:   HashOTP(otp),
+		Attempts:  0,
+		Verified:  false,
+		ExpiresAt: now.Add(s.otpTTL),
+		CreatedAt: now,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to store otp: %w", err)
+	}
+	if err := s.registrationMailer.SendRegistrationOTP(ctx, normalized, otp); err != nil {
+		if msg := UserFacingOTPDeliveryError(err); msg != err.Error() {
+			return nil, errors.New(msg)
+		}
+		return nil, fmt.Errorf("failed to send otp email: %w", err)
+	}
+
+	resp := &SendRegistrationOTPResponse{
+		Message: "verification code has been sent",
+	}
+	if isDevelopmentEnv() && !isRealEmailProvider() {
+		resp.DevOTP = otp
+	}
+	return resp, nil
+}
+
+func isRealEmailProvider() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))) {
+	case "resend", "ses":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDevelopmentEnv() bool {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENVIRONMENT")))
+	return env == "" || env == "development"
+}
+
+// VerifyRegistrationOTP validates the emailed code and returns a short-lived signup token.
+func (s *AuthService) VerifyRegistrationOTP(ctx context.Context, req *VerifyRegistrationOTPRequest) (*VerifyRegistrationOTPResponse, error) {
+	email, err := ValidateEmail(req.Email)
+	if err != nil {
+		return nil, errors.New("invalid or expired verification code")
+	}
+	otp := strings.TrimSpace(req.OTP)
+	if len(otp) != otpDigits {
+		return nil, errors.New("invalid or expired verification code")
+	}
+
+	record, err := s.repo.GetLatestEmailOTP(ctx, email)
+	if err != nil {
+		return nil, errors.New("invalid or expired verification code")
+	}
+	if record.Verified {
+		return nil, errors.New("verification code already used; request a new one")
+	}
+	if time.Now().After(record.ExpiresAt) {
+		return nil, errors.New("verification code has expired")
+	}
+	if record.Attempts >= maxOTPAttempts {
+		return nil, errors.New("too many invalid attempts; request a new code")
+	}
+	if HashOTP(otp) != record.OTPHash {
+		_ = s.repo.IncrementEmailOTPAttempts(ctx, record.ID)
+		return nil, errors.New("invalid or expired verification code")
+	}
+
+	verificationToken, err := GenerateRandomToken(24)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate verification token: %w", err)
+	}
+	tokenExpiresAt := time.Now().Add(s.verificationTTL)
+	if err := s.repo.MarkEmailOTPVerified(ctx, record.ID, verificationToken, tokenExpiresAt); err != nil {
+		return nil, err
+	}
+
+	return &VerifyRegistrationOTPResponse{
+		VerificationToken: verificationToken,
+		ExpiresIn:         int64(s.verificationTTL.Seconds()),
+	}, nil
+}
+
 // Register creates a new user and returns a token.
 func (s *AuthService) Register(ctx context.Context, req *RegisterRequest) (*TokenResponse, error) {
+	if strings.TrimSpace(req.VerificationToken) == "" {
+		return nil, errors.New("email verification is required")
+	}
 	email, err := ValidateEmail(req.Email)
 	if err != nil {
 		return nil, err
 	}
 	req.Email = email
 	req.Name = SanitizeUserInput(req.Name)
+	classLevel, err := ValidateClass(req.Class)
+	if err != nil {
+		return nil, err
+	}
+	mobile, err := ValidateMobile(req.Mobile)
+	if err != nil {
+		return nil, err
+	}
+	req.Mobile = mobile
 	if req.Password != req.PasswordConfirm {
 		return nil, errors.New("passwords do not match")
 	}
@@ -71,6 +205,14 @@ func (s *AuthService) Register(ctx context.Context, req *RegisterRequest) (*Toke
 	}
 	if !req.AcceptTerms {
 		return nil, errors.New("you must accept the terms of service")
+	}
+
+	verifiedOTP, err := s.repo.GetVerifiedEmailOTPByToken(ctx, req.Email, req.VerificationToken)
+	if err != nil {
+		return nil, errors.New("invalid or expired email verification")
+	}
+	if verifiedOTP.TokenExpiresAt == nil || time.Now().After(*verifiedOTP.TokenExpiresAt) {
+		return nil, errors.New("email verification has expired; request a new code")
 	}
 
 	// Check if user already exists
@@ -86,14 +228,15 @@ func (s *AuthService) Register(ctx context.Context, req *RegisterRequest) (*Toke
 	}
 
 	// Create user
+	phone := mobile
 	user := &User{
 		Name:          req.Name,
 		Email:         req.Email,
-		Phone:         req.Phone,
+		Phone:         &phone,
 		PasswordHash:  passwordHash,
 		Role:          "student",
 		Status:        "active",
-		EmailVerified: false,
+		EmailVerified: true,
 	}
 
 	userID, err := s.repo.CreateUser(ctx, user)
@@ -101,9 +244,20 @@ func (s *AuthService) Register(ctx context.Context, req *RegisterRequest) (*Toke
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
+	if err := s.repo.CreateUserProfile(ctx, userID, classLevel); err != nil {
+		return nil, fmt.Errorf("failed to create user profile: %w", err)
+	}
+	_ = s.repo.DeleteEmailOTPsForEmailAfterUse(ctx, req.Email)
+
 	user.ID = userID
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
+
+	if s.registrationMailer != nil {
+		if err := s.registrationMailer.SendRegistrationWelcome(ctx, user, classLevel); err != nil {
+			return nil, fmt.Errorf("account created but failed to send confirmation email: %w", err)
+		}
+	}
 
 	// Generate tokens
 	accessToken, err := s.generateAccessToken(user)

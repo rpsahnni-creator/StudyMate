@@ -75,6 +75,16 @@ func main() {
 		log.Fatalf("failed to init AI generator: %v", err)
 	}
 
+	var visionGen ai.VisionGenerator
+	useGeminiVision := ocrCfg.Provider == ocr.ProviderGeminiVision
+	if useGeminiVision {
+		visionGen, err = ai.NewGeminiVisionGenerator(aiCfg)
+		if err != nil {
+			log.Fatalf("failed to init Gemini Vision: %v", err)
+		}
+		logger.Info("gemini vision scan pipeline enabled", "model", visionGen.ModelName())
+	}
+
 	// --- Notifications module wiring (email needed for auth password reset) ---
 	notificationsRepo := notifications.NewRepository(pool)
 	notificationsLogger := notifications.StdLogger{}
@@ -100,9 +110,9 @@ func main() {
 
 	// --- Auth module wiring ---
 	authRepo := auth.NewPostgresRepository(pool)
-	authService := auth.NewAuthService(authRepo, cfg.JWTSecret).WithPasswordResetMailer(
-		auth.NewPasswordResetMailer(emailClient, cfg.FrontendURL),
-	)
+	authService := auth.NewAuthService(authRepo, cfg.JWTSecret).
+		WithPasswordResetMailer(auth.NewPasswordResetMailer(emailClient, cfg.FrontendURL)).
+		WithRegistrationMailer(auth.NewRegistrationMailer(emailClient))
 	authHandler := auth.NewHandler(authService, pool)
 
 	// --- Feature flags module wiring ---
@@ -131,6 +141,13 @@ func main() {
 	scanService := scan.NewService(scanRepo, cache, scanStore)
 	chunkUploader := scan.NewChunkUploadHandler(scanRepo, scanStore)
 	cacheService := scan.NewCacheService(cache, pool, logger)
+	if useGeminiVision {
+		if n, err := cacheService.PurgeAll(ctx); err != nil {
+			logger.Warn("failed to purge stale quiz cache on vision startup", "error", err)
+		} else if n > 0 {
+			logger.Info("purged stale stub quiz cache entries", "count", n)
+		}
+	}
 	scanHandler := scan.NewHandler(scanService).WithChunkUpload(chunkUploader).WithCacheService(cacheService).WithBilling(billingService)
 
 	// --- Notifications services (handler registered after routes setup) ---
@@ -157,6 +174,7 @@ func main() {
 		scanStore,
 		ocrProvider,
 		aiGenerator,
+		visionGen,
 		scanNotifier,
 		logger,
 		cacheService,
@@ -164,6 +182,7 @@ func main() {
 			MaxPagesPerJob:  ocrCfg.MaxPagesPerJob,
 			MinConfidence:   ocrCfg.MinConfidence,
 			AIQuestionCount: aiCfg.QuestionCount,
+			UseGeminiVision: useGeminiVision,
 		},
 	)
 
@@ -190,7 +209,12 @@ func main() {
 		Pool:            pool,
 		Cache:           cache,
 		Storage:         scanStore,
-		OCRProviderName: ocrProvider.Name(),
+		OCRProviderName: func() string {
+			if useGeminiVision && visionGen != nil {
+				return visionGen.ProviderName()
+			}
+			return ocrProvider.Name()
+		}(),
 		AIProviderName:  aiGenerator.ProviderName(),
 		Version:         "1.0.0",
 	}

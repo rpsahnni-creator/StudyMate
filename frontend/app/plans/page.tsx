@@ -92,7 +92,9 @@ export default function PlansPage() {
               {plan.isPopular ? <span style={styles.popularBadge}>Most popular</span> : null}
               {current ? <span style={styles.currentBadge}>Your plan</span> : null}
               <h2 style={styles.planName}>{plan.name}</h2>
-              <p style={styles.price}>{formatPlanPrice(plan)}</p>
+              <p style={styles.price}>
+                {isFree ? "₹0 / forever" : formatPlanPrice(plan)}
+              </p>
               <ul style={styles.featureList}>
                 {plan.features.map((feature) => (
                   <li key={feature} style={styles.featureItem}>
@@ -143,11 +145,12 @@ const styles: Record<string, React.CSSProperties> = {
   eyebrow: {
     padding: "5px 12px",
     borderRadius: 999,
-    background: "var(--brand-50)",
-    color: "var(--brand-700)",
+    background: "rgba(240, 180, 41, 0.12)",
+    color: "var(--gold)",
     fontSize: 13,
-    fontWeight: 700,
-    border: "1px solid var(--brand-100)",
+    fontWeight: 600,
+    letterSpacing: "-0.02em",
+    border: "1px solid rgba(240, 180, 41, 0.28)",
   },
   title: {
     fontSize: 36,
@@ -170,26 +173,27 @@ const styles: Record<string, React.CSSProperties> = {
   error: { textAlign: "center", color: "var(--danger)" },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: 20,
-    alignItems: "start",
+    alignItems: "stretch",
   },
   card: {
     position: "relative",
     border: "1px solid var(--border)",
     borderRadius: "var(--r-xl)",
     padding: 26,
-    background: "var(--surface)",
+    background: "rgba(255, 255, 255, 0.06)",
     display: "flex",
     flexDirection: "column",
     gap: 12,
+    height: "100%",
+    minHeight: 400,
     boxShadow: "var(--shadow-sm)",
-    transition: "transform 0.18s ease, box-shadow 0.2s ease",
+    transition: "border-color 0.18s ease, box-shadow 0.2s ease",
   },
   cardPopular: {
-    borderColor: "var(--brand-200)",
-    boxShadow: "var(--shadow-lg)",
-    transform: "translateY(-6px)",
+    borderColor: "rgba(240, 180, 41, 0.45)",
+    boxShadow: "var(--shadow-lg), 0 0 0 1px rgba(240, 180, 41, 0.15)",
   },
   cardCurrent: {
     outline: "2px solid var(--brand-500)",
@@ -211,17 +215,21 @@ const styles: Record<string, React.CSSProperties> = {
   },
   currentBadge: {
     alignSelf: "flex-start",
-    background: "var(--brand-50)",
-    color: "var(--brand-700)",
+    background: "rgba(240, 180, 41, 0.12)",
+    color: "var(--gold)",
     fontSize: 11,
-    fontWeight: 700,
+    fontWeight: 600,
+    letterSpacing: "-0.01em",
     padding: "4px 10px",
     borderRadius: 999,
+    border: "1px solid rgba(240, 180, 41, 0.28)",
   },
   planName: {
     margin: 0,
     fontSize: 22,
-    fontWeight: 750,
+    fontWeight: 600,
+    letterSpacing: "-0.02em",
+    color: "var(--text)",
   },
   price: {
     margin: 0,
@@ -241,41 +249,46 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: 8,
     alignItems: "flex-start",
-    color: "#374151",
+    color: "var(--text-muted)",
     fontSize: 14,
+    fontWeight: 400,
+    letterSpacing: "-0.01em",
+    lineHeight: 1.45,
   },
   check: {
     color: "var(--success)",
     fontWeight: 800,
   },
   primaryBtn: {
-    marginTop: 8,
+    marginTop: "auto",
     border: "none",
     borderRadius: "var(--r-md)",
     padding: "13px 16px",
     background: "var(--brand-gradient)",
     color: "#fff",
-    fontWeight: 700,
+    fontWeight: 600,
+    letterSpacing: "-0.02em",
     cursor: "pointer",
     textAlign: "center",
     textDecoration: "none",
     boxShadow: "var(--shadow-brand)",
   },
   secondaryBtn: {
-    marginTop: 8,
+    marginTop: "auto",
     border: "1px solid var(--border-strong)",
     borderRadius: "var(--r-md)",
     padding: "13px 16px",
-    background: "var(--surface)",
+    background: "rgba(255, 255, 255, 0.06)",
     color: "var(--text)",
-    fontWeight: 650,
+    fontWeight: 500,
+    letterSpacing: "-0.02em",
     cursor: "pointer",
     textAlign: "center",
     textDecoration: "none",
     display: "block",
   },
   disabledBtn: {
-    marginTop: 8,
+    marginTop: "auto",
     border: "1px solid var(--border)",
     borderRadius: "var(--r-md)",
     padding: "13px 16px",

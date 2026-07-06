@@ -19,7 +19,9 @@ const (
 	defaultTimeoutSec    = 30
 
 	modelOpenAIDefault = "gpt-4o-mini"
-	modelGeminiDefault = "gemini-2.0-flash"
+	// gemini-2.5-flash has active free-tier quota; gemini-2.0-flash returns
+	// HTTP 429 (free_tier limit: 0) on new AI Studio keys.
+	modelGeminiDefault = "gemini-2.5-flash"
 )
 
 // Generator produces quiz questions from educational text.
@@ -40,12 +42,17 @@ type GenerateRequest struct {
 	Language      string // english | hindi | bilingual
 	ScanMode      string // chapter | existing_questions
 	PageType      string
-	Mix           QuestionMix
-	WantSummary   bool
-	Rules         ExplanationRules
+	Mix              QuestionMix
+	WantSummary      bool
+	FlexibleVision   bool // page-grounded Gemini Vision: no fixed question counts
+	VisionMaxQuestions int
+	Rules            ExplanationRules
 }
 
 func (r GenerateRequest) questionCount() int {
+	if r.FlexibleVision {
+		return r.visionMaxQuestions()
+	}
 	if total := r.effectiveMix().Total(); total > 0 {
 		return total
 	}
@@ -56,6 +63,9 @@ func (r GenerateRequest) questionCount() int {
 }
 
 func (r GenerateRequest) effectiveMix() QuestionMix {
+	if r.FlexibleVision {
+		return QuestionMix{}
+	}
 	if r.Mix.Total() > 0 {
 		return r.Mix
 	}
@@ -63,6 +73,13 @@ func (r GenerateRequest) effectiveMix() QuestionMix {
 		return DefaultExistingMix()
 	}
 	return DefaultChapterMix()
+}
+
+func (r GenerateRequest) visionMaxQuestions() int {
+	if r.VisionMaxQuestions > 0 {
+		return r.VisionMaxQuestions
+	}
+	return VisionMaxQuestionsDefault()
 }
 
 func (r GenerateRequest) explanationRules() ExplanationRules {
@@ -223,51 +240,68 @@ func parseProviderResponse(content string, wantCount int) ([]GeneratedQuestion, 
 }
 
 // parseAndValidate converts raw JSON questions to domain questions with checks.
+// When wantCount is 0 (flexible vision mode), invalid individual questions are
+// skipped instead of failing the entire batch.
 func parseAndValidate(questions []rawQuestion, wantCount int) ([]GeneratedQuestion, error) {
+	flexible := wantCount == 0
 	if wantCount > 0 && len(questions) != wantCount {
 		return nil, fmt.Errorf("expected %d questions, got %d", wantCount, len(questions))
 	}
 	out := make([]GeneratedQuestion, 0, len(questions))
 	for i, q := range questions {
-		if strings.TrimSpace(q.Text) == "" {
-			return nil, fmt.Errorf("question %d has empty text", i)
+		validated, err := validateRawQuestion(q, i)
+		if err != nil {
+			if flexible {
+				continue
+			}
+			return nil, err
 		}
-		qType := strings.TrimSpace(q.Type)
-		if qType == "" {
-			qType = QuestionTypeMCQ
-		}
-		minOpts, maxOpts := 4, 4
-		switch qType {
-		case QuestionTypeTrueFalse:
-			minOpts, maxOpts = 2, 2
-		case QuestionTypeFillBlank:
-			minOpts, maxOpts = 2, 4
-		case QuestionTypeMCQ:
-			minOpts, maxOpts = 4, 4
-		default:
-			return nil, fmt.Errorf("question %d has unsupported type %q", i, qType)
-		}
-		if len(q.Options) < minOpts || len(q.Options) > maxOpts {
-			return nil, fmt.Errorf("question %d type %s must have %d-%d options, got %d", i, qType, minOpts, maxOpts, len(q.Options))
-		}
-		if q.CorrectIndex < 0 || q.CorrectIndex >= len(q.Options) {
-			return nil, fmt.Errorf("question %d correct_index %d out of range", i, q.CorrectIndex)
-		}
-		options := make([]GeneratedOption, 0, len(q.Options))
-		for _, o := range q.Options {
-			options = append(options, GeneratedOption{Label: o.Label, Text: o.Text})
-		}
-		out = append(out, GeneratedQuestion{
-			Text:         q.Text,
-			Type:         qType,
-			Options:      options,
-			CorrectIndex: q.CorrectIndex,
-			Explanation:  q.Explanation,
-			Difficulty:   q.Difficulty,
-			Topic:        q.Topic,
-		})
+		out = append(out, validated)
+	}
+	if len(out) == 0 && len(questions) > 0 {
+		return nil, fmt.Errorf("all %d questions failed validation", len(questions))
 	}
 	return out, nil
+}
+
+func validateRawQuestion(q rawQuestion, index int) (GeneratedQuestion, error) {
+	if strings.TrimSpace(q.Text) == "" {
+		return GeneratedQuestion{}, fmt.Errorf("question %d has empty text", index)
+	}
+	qType := strings.TrimSpace(q.Type)
+	if qType == "" {
+		qType = QuestionTypeMCQ
+	}
+	minOpts, maxOpts := 4, 4
+	switch qType {
+	case QuestionTypeTrueFalse:
+		minOpts, maxOpts = 2, 2
+	case QuestionTypeFillBlank:
+		minOpts, maxOpts = 2, 4
+	case QuestionTypeMCQ:
+		minOpts, maxOpts = 4, 4
+	default:
+		return GeneratedQuestion{}, fmt.Errorf("question %d has unsupported type %q", index, qType)
+	}
+	if len(q.Options) < minOpts || len(q.Options) > maxOpts {
+		return GeneratedQuestion{}, fmt.Errorf("question %d type %s must have %d-%d options, got %d", index, qType, minOpts, maxOpts, len(q.Options))
+	}
+	if q.CorrectIndex < 0 || q.CorrectIndex >= len(q.Options) {
+		return GeneratedQuestion{}, fmt.Errorf("question %d correct_index %d out of range", index, q.CorrectIndex)
+	}
+	options := make([]GeneratedOption, 0, len(q.Options))
+	for _, o := range q.Options {
+		options = append(options, GeneratedOption{Label: o.Label, Text: o.Text})
+	}
+	return GeneratedQuestion{
+		Text:         q.Text,
+		Type:         qType,
+		Options:      options,
+		CorrectIndex: q.CorrectIndex,
+		Explanation:  q.Explanation,
+		Difficulty:   q.Difficulty,
+		Topic:        q.Topic,
+	}, nil
 }
 
 func extractJSONPayload(raw string) string {

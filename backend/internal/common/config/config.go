@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -142,9 +143,22 @@ func (c Config) warnDevelopmentDefaults() {
 // loadDotEnv reads backend/.env when present (local dev only; production uses real env vars).
 func loadDotEnv() {
 	for _, path := range []string{".env", "backend/.env"} {
-		if err := godotenv.Load(path); err == nil {
-			return
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
 		}
+		// PowerShell Set-Content -Encoding utf8 writes a BOM; godotenv.Load rejects the file.
+		data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+		envMap, err := godotenv.Unmarshal(string(data))
+		if err != nil {
+			continue
+		}
+		for key, val := range envMap {
+			if os.Getenv(key) == "" {
+				_ = os.Setenv(key, val)
+			}
+		}
+		return
 	}
 }
 

@@ -36,7 +36,7 @@ func buildChapterPrompt(req GenerateRequest, rules ExplanationRules, mix Questio
 	summaryBlock := ""
 	if req.WantSummary {
 		summaryBlock = `
-Also include a top-level "chapter_summary" field: 3-5 short Hindi sentences summarizing the chapter/page (simple language).`
+Also include a top-level "chapter_summary" field: 3-5 short sentences in the same language as the source text summarizing the chapter/page (simple language).`
 	}
 	return fmt.Sprintf(`Generate a quiz from this educational text.
 Board: %s, Subject: %s, Chapter: %s
@@ -77,7 +77,7 @@ func buildExistingQuestionsPrompt(req GenerateRequest, rules ExplanationRules, m
 	}
 	return fmt.Sprintf(`This page contains PRINTED questions from a textbook. Detect and extract them — do NOT invent new chapter content.
 Clean formatting, fix OCR typos, keep original meaning.
-Generate an answer key with simple Hindi explanations (follow all language rules).
+Generate an answer key with simple explanations in the same language as the source text (follow all language rules).
 
 Extract up to %d MCQ questions (type "mcq", 4 options when possible; if only 2 options exist use 2).
 If the page has fill-blank or true/false printed questions, preserve their type.

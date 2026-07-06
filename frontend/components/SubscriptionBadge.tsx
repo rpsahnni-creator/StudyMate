@@ -59,7 +59,7 @@ export function SubscriptionBadge() {
         }}
         title={warnExpiry ? `${entitlements?.days_remaining} days left` : undefined}
       >
-        <Icon size={12} strokeWidth={2.6} />
+        <Icon size={14} strokeWidth={2.6} />
         {label}
         {warnExpiry ? ` · ${entitlements?.days_remaining}d` : ""}
       </span>
@@ -71,14 +71,14 @@ const styles: Record<string, React.CSSProperties> = {
   badge: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 5,
-    padding: "4px 10px",
+    gap: 6,
+    padding: "6px 12px",
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 600,
   },
   skeleton: {
-    fontSize: 12,
+    fontSize: 14,
     color: "#9ca3af",
   },
 };

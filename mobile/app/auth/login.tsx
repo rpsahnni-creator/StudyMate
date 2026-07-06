@@ -1,11 +1,25 @@
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Link, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../hooks/useAuth";
-import { DEMO_EMAIL, DEMO_PASSWORD } from "../../lib/demoAccount";
-import { API_URL } from "../../lib/config";
-import { Field, LogoMark, PasswordField, PrimaryButton, SecondaryButton } from "../../components/ui";
-import { colors, radius, shadow, spacing } from "../../lib/theme";
+import { Field, LogoMark, PasswordField, PrimaryButton } from "../../components/ui";
+import { radius, spacing } from "../../lib/theme";
+
+const palette = {
+  night: "#050508",
+  white: "#FFFFFF",
+  ink: "#0F172A",
+  muted: "#94A3B8",
+  cyan: "#22D3EE",
+  gold: "#F0B429",
+  goldDark: "#D49A12",
+  seaGreen: "#20B2AA",
+  brandMuted: "#9EB4C8",
+  glass: "rgba(255, 255, 255, 0.07)",
+  glassBorder: "rgba(255, 255, 255, 0.12)",
+};
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -21,7 +35,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(loginEmail, loginPassword);
-      router.replace("/(tabs)/scan");
+      router.replace("/(tabs)");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -33,90 +47,197 @@ export default function LoginScreen() {
     void submitLogin(email, password);
   }
 
-  function handleDemoLogin() {
-    setEmail(DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
-    void submitLogin(DEMO_EMAIL, DEMO_PASSWORD);
-  }
-
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <View style={styles.brandRow}>
-          <LogoMark size={40} />
-          <Text style={styles.brand}>StudyApp</Text>
-        </View>
-        <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>Sign in to scan chapters and generate quizzes.</Text>
+    <View style={styles.root}>
+      <View style={styles.glowCyan} pointerEvents="none" />
+      <View style={styles.glowOrange} pointerEvents="none" />
+      <View style={styles.glowViolet} pointerEvents="none" />
 
-        <View style={styles.form}>
-          <Field
-            label="Email"
-            placeholder="demo@123.com"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoComplete="email"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <PasswordField
-            label="Password"
-            placeholder="Demo@123"
-            autoComplete="password"
-            value={password}
-            onChangeText={setPassword}
-          />
+      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+        <StatusBar style="light" />
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.hero}>
+            <View style={styles.logoWrap}>
+              <LogoMark width={280} height={100} />
+            </View>
+            <Text style={styles.brandName}>Kiji Technology</Text>
+            <Text style={styles.heroTitle}>
+              <Text style={styles.heroStudy}>Study</Text>
+              <Text style={styles.heroMate}>Mate</Text>
+            </Text>
+            <Text style={styles.heroSubtitle}>Learn Smarter Every Day</Text>
+          </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <View style={styles.formSection}>
+            <Text style={styles.sectionLabel}>Sign in to your account</Text>
 
-          <PrimaryButton title="Sign in" onPress={handleLogin} loading={loading} />
+            <View style={styles.card}>
+              <View style={styles.form}>
+                <Field
+                  label="Email"
+                  placeholder="you@example.com"
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoComplete="email"
+                  value={email}
+                  onChangeText={setEmail}
+                />
+                <PasswordField
+                  label="Password"
+                  placeholder="••••••••"
+                  autoComplete="password"
+                  value={password}
+                  onChangeText={setPassword}
+                />
 
-          {__DEV__ ? (
-            <>
-              <SecondaryButton title="Demo account se login" onPress={handleDemoLogin} disabled={loading} />
-              <Text style={styles.demoHint}>
-                Demo: {DEMO_EMAIL} / {DEMO_PASSWORD}
-                {"\n"}Server: {API_URL}
-              </Text>
-            </>
-          ) : null}
+                {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Link href="/auth/forgot-password" style={styles.forgotLink}>
-            Forgot password?
-          </Link>
-        </View>
+                <PrimaryButton
+                  title="Sign in"
+                  onPress={handleLogin}
+                  loading={loading}
+                  style={styles.signInBtn}
+                  labelColor={palette.ink}
+                />
 
-        <Link href="/auth/register" style={styles.link}>
-          No account? Create one
-        </Link>
-      </View>
+                <Link href="/auth/forgot-password" style={styles.forgotLink}>
+                  Forgot password?
+                </Link>
+              </View>
+
+              <Link href="/auth/register" style={styles.link}>
+                No account? Create one
+              </Link>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    padding: spacing.xl,
+    backgroundColor: palette.night,
+    overflow: "hidden",
+  },
+  glowCyan: {
+    position: "absolute",
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+    backgroundColor: "rgba(34, 211, 238, 0.42)",
+    bottom: -40,
+    left: -90,
+  },
+  glowOrange: {
+    position: "absolute",
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: "rgba(32, 178, 170, 0.34)",
+    bottom: 20,
+    right: -70,
+  },
+  glowViolet: {
+    position: "absolute",
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(99, 102, 241, 0.22)",
+    top: -40,
+    right: -30,
+  },
+  safe: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
+  scroll: {
+    flexGrow: 1,
     justifyContent: "center",
-    backgroundColor: colors.bg,
+    padding: spacing.xl,
+    paddingVertical: spacing.xxl,
+  },
+  hero: {
+    alignItems: "center",
+    marginBottom: spacing.xl,
+  },
+  logoWrap: {
+    marginBottom: spacing.sm,
+  },
+  brandName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: palette.brandMuted,
+    textAlign: "center",
+    letterSpacing: 0.5,
+    marginBottom: spacing.md,
+  },
+  heroTitle: {
+    fontSize: 38,
+    textAlign: "center",
+    marginBottom: 10,
+    lineHeight: 42,
+  },
+  heroStudy: {
+    color: palette.white,
+    fontWeight: "300",
+    letterSpacing: 2,
+  },
+  heroMate: {
+    color: palette.gold,
+    fontWeight: "800",
+    fontStyle: "italic",
+    letterSpacing: -0.5,
+    textShadowColor: "rgba(240, 180, 41, 0.35)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 10,
+  },
+  heroSubtitle: {
+    fontSize: 15,
+    color: "rgba(255, 255, 255, 0.72)",
+    textAlign: "center",
+    lineHeight: 22,
+    maxWidth: 320,
+  },
+  formSection: {
+    width: "100%",
+    maxWidth: 440,
+    alignSelf: "center",
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.55)",
+    marginBottom: 12,
+    marginLeft: 4,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: palette.white,
+    borderRadius: 26,
     padding: spacing.xl,
-    ...shadow.md,
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 8,
   },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.xl },
-  brand: { fontSize: 19, fontWeight: "800", color: colors.text },
-  title: { fontSize: 27, fontWeight: "800", color: colors.text, marginBottom: 6 },
-  subtitle: { fontSize: 15, color: colors.textMuted, marginBottom: spacing.xl },
   form: { gap: spacing.lg },
+  signInBtn: {
+    backgroundColor: palette.gold,
+    shadowColor: palette.goldDark,
+    borderRadius: 999,
+  },
   error: {
-    color: colors.danger,
-    backgroundColor: colors.dangerBg,
+    color: "#dc2626",
+    backgroundColor: "#fef2f2",
     padding: 11,
     borderRadius: radius.md,
     fontWeight: "500",
@@ -124,20 +245,15 @@ const styles = StyleSheet.create({
   link: {
     marginTop: spacing.xl,
     textAlign: "center",
-    color: colors.brandDark,
+    color: palette.ink,
     fontWeight: "700",
     fontSize: 14,
+    textDecorationLine: "underline",
   },
   forgotLink: {
     textAlign: "center",
-    color: colors.textMuted,
+    color: palette.muted,
     fontWeight: "600",
     fontSize: 13.5,
-  },
-  demoHint: {
-    fontSize: 12,
-    color: colors.textSubtle,
-    textAlign: "center",
-    lineHeight: 17,
   },
 });

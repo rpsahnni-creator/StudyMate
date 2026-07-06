@@ -9,13 +9,18 @@ import (
 // MockRepository is a mock implementation of Repository for testing.
 type MockRepository struct {
 	users       map[string]*User
+	profiles    map[int64]string
 	resetTokens map[string]*PasswordResetToken
+	otps        map[string]*EmailVerificationOTP
+	nextOTPId   int64
 }
 
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
 		users:       make(map[string]*User),
+		profiles:    make(map[int64]string),
 		resetTokens: make(map[string]*PasswordResetToken),
+		otps:        make(map[string]*EmailVerificationOTP),
 	}
 }
 
@@ -23,6 +28,12 @@ func (m *MockRepository) CreateUser(ctx context.Context, user *User) (int64, err
 	user.ID = int64(len(m.users) + 1)
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
+	if user.Role == "" {
+		user.Role = "student"
+	}
+	if user.Status == "" {
+		user.Status = "active"
+	}
 	m.users[user.Email] = user
 	return user.ID, nil
 }
@@ -109,6 +120,66 @@ func (m *MockRepository) MarkPasswordResetTokenUsed(ctx context.Context, token s
 	return nil
 }
 
+func (m *MockRepository) DeleteEmailOTPsForEmail(ctx context.Context, email string) error {
+	delete(m.otps, email)
+	return nil
+}
+
+func (m *MockRepository) CreateEmailOTP(ctx context.Context, otp *EmailVerificationOTP) error {
+	m.nextOTPId++
+	otp.ID = m.nextOTPId
+	m.otps[otp.Email] = otp
+	return nil
+}
+
+func (m *MockRepository) GetLatestEmailOTP(ctx context.Context, email string) (*EmailVerificationOTP, error) {
+	otp, ok := m.otps[email]
+	if !ok {
+		return nil, ErrUserNotFound
+	}
+	return otp, nil
+}
+
+func (m *MockRepository) IncrementEmailOTPAttempts(ctx context.Context, id int64) error {
+	for _, otp := range m.otps {
+		if otp.ID == id {
+			otp.Attempts++
+			return nil
+		}
+	}
+	return ErrUserNotFound
+}
+
+func (m *MockRepository) MarkEmailOTPVerified(ctx context.Context, id int64, verificationToken string, tokenExpiresAt time.Time) error {
+	for _, otp := range m.otps {
+		if otp.ID == id {
+			otp.Verified = true
+			otp.VerificationToken = &verificationToken
+			otp.TokenExpiresAt = &tokenExpiresAt
+			return nil
+		}
+	}
+	return ErrUserNotFound
+}
+
+func (m *MockRepository) GetVerifiedEmailOTPByToken(ctx context.Context, email, verificationToken string) (*EmailVerificationOTP, error) {
+	otp, ok := m.otps[email]
+	if !ok || !otp.Verified || otp.VerificationToken == nil || *otp.VerificationToken != verificationToken {
+		return nil, ErrUserNotFound
+	}
+	return otp, nil
+}
+
+func (m *MockRepository) DeleteEmailOTPsForEmailAfterUse(ctx context.Context, email string) error {
+	delete(m.otps, email)
+	return nil
+}
+
+func (m *MockRepository) CreateUserProfile(ctx context.Context, userID int64, classLevel string) error {
+	m.profiles[userID] = classLevel
+	return nil
+}
+
 // ErrUserNotFound indicates user was not found
 type UserNotFoundError struct{}
 
@@ -124,24 +195,69 @@ func (m *mockResetMailer) SendPasswordReset(ctx context.Context, user *User, tok
 	return nil
 }
 
+type mockRegistrationMailer struct {
+	lastOTP   string
+	lastEmail string
+}
+
+func (m *mockRegistrationMailer) SendRegistrationOTP(ctx context.Context, email, otp string) error {
+	m.lastEmail = email
+	m.lastOTP = otp
+	return nil
+}
+
+func (m *mockRegistrationMailer) SendRegistrationWelcome(ctx context.Context, user *User, classLevel string) error {
+	return nil
+}
+
+func newTestAuthWithRegistration() (*MockRepository, *AuthService, *mockRegistrationMailer) {
+	repo := NewMockRepository()
+	regMailer := &mockRegistrationMailer{}
+	service := NewAuthService(repo, "test-secret").
+		WithPasswordResetMailer(&mockResetMailer{}).
+		WithRegistrationMailer(regMailer)
+	return repo, service, regMailer
+}
+
+func defaultRegisterRequest() *RegisterRequest {
+	return &RegisterRequest{
+		Name:            "John Doe",
+		Email:           "john@example.com",
+		Class:           "10",
+		Mobile:          "9876543210",
+		Password:        "StrongPass123!",
+		PasswordConfirm: "StrongPass123!",
+		AcceptTerms:     true,
+	}
+}
+
+func registerTestUser(t *testing.T, service *AuthService, regMailer *mockRegistrationMailer, req *RegisterRequest) *TokenResponse {
+	t.Helper()
+	if _, err := service.SendRegistrationOTP(context.Background(), req.Email); err != nil {
+		t.Fatalf("SendRegistrationOTP failed: %v", err)
+	}
+	verifyResp, err := service.VerifyRegistrationOTP(context.Background(), &VerifyRegistrationOTPRequest{
+		Email: req.Email,
+		OTP:   regMailer.lastOTP,
+	})
+	if err != nil {
+		t.Fatalf("VerifyRegistrationOTP failed: %v", err)
+	}
+	req.VerificationToken = verifyResp.VerificationToken
+	resp, err := service.Register(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	return resp
+}
+
 func authServiceWithResetMailer(repo Repository) *AuthService {
 	return NewAuthService(repo, "test-secret").WithPasswordResetMailer(&mockResetMailer{})
 }
 
 func TestRegister_Success(t *testing.T) {
-	repo := NewMockRepository()
-	service := NewAuthService(repo, "test-secret")
-
-	resp, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "John Doe",
-		Email:           "john@example.com",
-		Password:        "StrongPass123!",
-		PasswordConfirm: "StrongPass123!",
-		AcceptTerms:     true,
-	})
-	if err != nil {
-		t.Fatalf("Register failed: %v", err)
-	}
+	_, service, regMailer := newTestAuthWithRegistration()
+	resp := registerTestUser(t, service, regMailer, defaultRegisterRequest())
 	if resp.AccessToken == "" {
 		t.Fatal("Expected access token")
 	}
@@ -164,26 +280,27 @@ func TestRegister_PasswordMismatch(t *testing.T) {
 }
 
 func TestRegister_DuplicateEmail(t *testing.T) {
-	repo := NewMockRepository()
-	service := NewAuthService(repo, "test-secret")
+	repo, service, regMailer := newTestAuthWithRegistration()
+	registerTestUser(t, service, regMailer, defaultRegisterRequest())
 
-	_, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "John Doe",
-		Email:           "john@example.com",
-		Password:        "StrongPass123!",
-		PasswordConfirm: "StrongPass123!",
-		AcceptTerms:     true,
-	})
-	if err != nil {
-		t.Fatalf("First register failed: %v", err)
+	token := "duplicate-test-token"
+	expires := time.Now().Add(30 * time.Minute)
+	repo.otps["john@example.com"] = &EmailVerificationOTP{
+		Email:             "john@example.com",
+		Verified:          true,
+		VerificationToken: &token,
+		TokenExpiresAt:    &expires,
 	}
 
-	_, err = service.Register(context.Background(), &RegisterRequest{
-		Name:            "Jane Doe",
-		Email:           "john@example.com",
-		Password:        "AnotherPass456!",
-		PasswordConfirm: "AnotherPass456!",
-		AcceptTerms:     true,
+	_, err := service.Register(context.Background(), &RegisterRequest{
+		VerificationToken: token,
+		Name:              "Jane Doe",
+		Email:             "john@example.com",
+		Class:             "10",
+		Mobile:            "9876543211",
+		Password:          "AnotherPass456!",
+		PasswordConfirm:   "AnotherPass456!",
+		AcceptTerms:       true,
 	})
 	if err == nil {
 		t.Fatal("Expected duplicate email error")
@@ -191,19 +308,8 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 }
 
 func TestLogin_Success(t *testing.T) {
-	repo := NewMockRepository()
-	service := NewAuthService(repo, "test-secret")
-
-	_, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "John Doe",
-		Email:           "john@example.com",
-		Password:        "StrongPass123!",
-		PasswordConfirm: "StrongPass123!",
-		AcceptTerms:     true,
-	})
-	if err != nil {
-		t.Fatalf("Register failed: %v", err)
-	}
+	_, service, regMailer := newTestAuthWithRegistration()
+	registerTestUser(t, service, regMailer, defaultRegisterRequest())
 
 	resp, err := service.Login(context.Background(), &LoginRequest{Email: "john@example.com", Password: "StrongPass123!"})
 	if err != nil {
@@ -215,21 +321,10 @@ func TestLogin_Success(t *testing.T) {
 }
 
 func TestLogin_InvalidPassword(t *testing.T) {
-	repo := NewMockRepository()
-	service := NewAuthService(repo, "test-secret")
+	_, service, regMailer := newTestAuthWithRegistration()
+	registerTestUser(t, service, regMailer, defaultRegisterRequest())
 
-	_, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "John Doe",
-		Email:           "john@example.com",
-		Password:        "StrongPass123!",
-		PasswordConfirm: "StrongPass123!",
-		AcceptTerms:     true,
-	})
-	if err != nil {
-		t.Fatalf("Register failed: %v", err)
-	}
-
-	_, err = service.Login(context.Background(), &LoginRequest{Email: "john@example.com", Password: "WrongPass789!"})
+	_, err := service.Login(context.Background(), &LoginRequest{Email: "john@example.com", Password: "WrongPass789!"})
 	if err == nil {
 		t.Fatal("Expected invalid password error")
 	}
@@ -246,21 +341,10 @@ func TestLogin_NonexistentUser(t *testing.T) {
 }
 
 func TestChangePassword_Success(t *testing.T) {
-	repo := NewMockRepository()
-	service := NewAuthService(repo, "test-secret")
+	_, service, regMailer := newTestAuthWithRegistration()
+	resp := registerTestUser(t, service, regMailer, defaultRegisterRequest())
 
-	resp, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "John Doe",
-		Email:           "john@example.com",
-		Password:        "StrongPass123!",
-		PasswordConfirm: "StrongPass123!",
-		AcceptTerms:     true,
-	})
-	if err != nil {
-		t.Fatalf("Register failed: %v", err)
-	}
-
-	err = service.ChangePassword(context.Background(), resp.User.ID, &ChangePasswordRequest{
+	err := service.ChangePassword(context.Background(), resp.User.ID, &ChangePasswordRequest{
 		CurrentPassword:    "StrongPass123!",
 		NewPassword:        "NewStrongPass456!",
 		NewPasswordConfirm: "NewStrongPass456!",
@@ -271,19 +355,8 @@ func TestChangePassword_Success(t *testing.T) {
 }
 
 func TestVerifyToken_Success(t *testing.T) {
-	repo := NewMockRepository()
-	service := NewAuthService(repo, "test-secret")
-
-	resp, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "John Doe",
-		Email:           "john@example.com",
-		Password:        "StrongPass123!",
-		PasswordConfirm: "StrongPass123!",
-		AcceptTerms:     true,
-	})
-	if err != nil {
-		t.Fatalf("Register failed: %v", err)
-	}
+	_, service, regMailer := newTestAuthWithRegistration()
+	resp := registerTestUser(t, service, regMailer, defaultRegisterRequest())
 
 	claims, err := service.VerifyToken(resp.AccessToken)
 	if err != nil {
@@ -305,35 +378,36 @@ func TestVerifyToken_InvalidToken(t *testing.T) {
 }
 
 func TestRegister_RejectsWeakPassword(t *testing.T) {
-	repo := NewMockRepository()
-	service := NewAuthService(repo, "test-secret")
+	_, service, regMailer := newTestAuthWithRegistration()
+	req := defaultRegisterRequest()
+	req.Email = "jane@example.com"
+	req.Password = "weak"
+	req.PasswordConfirm = "weak"
 
-	_, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "Jane Doe",
-		Email:           "jane@example.com",
-		Password:        "weak",
-		PasswordConfirm: "weak",
-		AcceptTerms:     true,
+	if _, err := service.SendRegistrationOTP(context.Background(), req.Email); err != nil {
+		t.Fatalf("SendRegistrationOTP failed: %v", err)
+	}
+	verifyResp, err := service.VerifyRegistrationOTP(context.Background(), &VerifyRegistrationOTPRequest{
+		Email: req.Email,
+		OTP:   regMailer.lastOTP,
 	})
+	if err != nil {
+		t.Fatalf("VerifyRegistrationOTP failed: %v", err)
+	}
+	req.VerificationToken = verifyResp.VerificationToken
+
+	_, err = service.Register(context.Background(), req)
 	if err == nil {
 		t.Fatal("Expected weak password rejection")
 	}
 }
 
 func TestResetPassword_UsesToken(t *testing.T) {
-	repo := NewMockRepository()
-	service := authServiceWithResetMailer(repo)
-
-	_, err := service.Register(context.Background(), &RegisterRequest{
-		Name:            "Reset User",
-		Email:           "reset@example.com",
-		Password:        "StrongPass123!",
-		PasswordConfirm: "StrongPass123!",
-		AcceptTerms:     true,
-	})
-	if err != nil {
-		t.Fatalf("Register failed: %v", err)
-	}
+	repo, service, regMailer := newTestAuthWithRegistration()
+	req := defaultRegisterRequest()
+	req.Email = "reset@example.com"
+	req.Name = "Reset User"
+	registerTestUser(t, service, regMailer, req)
 
 	if err := service.InitiatePasswordReset(context.Background(), "reset@example.com"); err != nil {
 		t.Fatalf("InitiatePasswordReset failed: %v", err)
@@ -348,7 +422,7 @@ func TestResetPassword_UsesToken(t *testing.T) {
 		t.Fatal("Expected reset token in repository")
 	}
 
-	err = service.ResetPassword(context.Background(), token, "NewStrongPass456!", "NewStrongPass456!")
+	err := service.ResetPassword(context.Background(), token, "NewStrongPass456!", "NewStrongPass456!")
 	if err != nil {
 		t.Fatalf("ResetPassword failed: %v", err)
 	}

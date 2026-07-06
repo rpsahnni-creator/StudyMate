@@ -13,6 +13,7 @@ const (
 	ProviderStub         = "stub"
 	ProviderTesseract    = "tesseract"
 	ProviderGoogleVision = "google_vision"
+	ProviderGeminiVision = "gemini_vision"
 )
 
 // OCRConfig holds provider selection and tuning from environment.
@@ -101,6 +102,9 @@ func NewProvider(cfg OCRConfig) (Provider, error) {
 	}
 	switch provider {
 	case ProviderStub:
+		return NewStubProvider(), nil
+	case ProviderGeminiVision:
+		// OCR is skipped; worker uses Gemini Vision on image bytes directly.
 		return NewStubProvider(), nil
 	case ProviderTesseract:
 		return NewTesseractProvider(cfg.MinConfidence), nil

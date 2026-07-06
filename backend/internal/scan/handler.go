@@ -103,6 +103,10 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "invalid JSON", nil)
 		return
 	}
+	req.Board = NormalizeBoard(req.Board)
+	if req.Board == "" {
+		req.Board = "ncert"
+	}
 
 	if vErrs := ValidateScanJob(ScanJobRequestFromCreate(req)); len(vErrs) > 0 {
 		details := make(map[string]string, len(vErrs))

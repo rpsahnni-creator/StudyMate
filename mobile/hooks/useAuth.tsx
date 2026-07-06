@@ -9,11 +9,13 @@ import {
 } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useRouter, useSegments } from "expo-router";
-import { API_URL, clearTokens, getAccessToken, parseApiError, saveTokens, type TokenResponse } from "../lib/auth";
+import { API_URL, clearTokens, fetchCurrentUser, getAccessToken, getUser, parseApiError, saveTokens, saveUser, type AuthUser, type TokenResponse } from "../lib/auth";
+import { clearProfileImageUri } from "../lib/profile";
 import { clearFeatureFlagCache } from "../lib/featureFlagCache";
 
 interface AuthContextValue {
   token: string | null;
+  user: AuthUser | null;
   isLoggedIn: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -24,15 +26,19 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-    void getAccessToken().then((stored) => {
-      if (mounted) {
-        setToken(stored);
-        setIsLoading(false);
+    void Promise.all([getAccessToken(), getUser()]).then(async ([storedToken, storedUser]) => {
+      if (!mounted) return;
+      setToken(storedToken);
+      if (storedToken) {
+        const resolvedUser = storedUser ?? (await fetchCurrentUser());
+        if (mounted) setUser(resolvedUser);
       }
+      if (mounted) setIsLoading(false);
     });
     return () => {
       mounted = false;
@@ -67,25 +73,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Login response invalid — backend se token nahi mila");
     }
     await saveTokens(data.access_token, data.refresh_token);
+    if (data.user) {
+      await saveUser(data.user);
+      setUser(data.user);
+    }
     clearFeatureFlagCache();
     setToken(data.access_token);
   }, []);
 
   const logout = useCallback(async () => {
     await clearTokens();
+    await clearProfileImageUri();
     clearFeatureFlagCache();
     setToken(null);
+    setUser(null);
   }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       token,
+      user,
       isLoggedIn: Boolean(token),
       isLoading,
       login,
       logout,
     }),
-    [token, isLoading, login, logout]
+    [token, user, isLoading, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -115,7 +128,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
 
     if (isLoggedIn && inAuthGroup) {
-      router.replace("/(tabs)/scan");
+      router.replace("/(tabs)");
     }
   }, [isLoggedIn, isLoading, segments, router]);
 

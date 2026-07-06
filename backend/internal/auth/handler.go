@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,11 +28,49 @@ func NewHandler(service Service, db *pgxpool.Pool) *Handler {
 
 // RegisterRoutes registers all auth routes on the router.
 func (h *Handler) RegisterRoutes(r chi.Router) {
+	r.Post("/auth/register/send-otp", h.SendRegistrationOTP)
+	r.Post("/auth/register/verify-otp", h.VerifyRegistrationOTP)
 	r.Post("/auth/register", h.Register)
 	r.Post("/auth/login", h.Login)
 	r.Post("/auth/refresh", h.RefreshToken)
 	r.Post("/auth/forgot-password", h.ForgotPassword)
 	r.Post("/auth/reset-password", h.ResetPassword)
+}
+
+func (h *Handler) SendRegistrationOTP(w http.ResponseWriter, r *http.Request) {
+	var req SendRegistrationOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "invalid JSON", nil)
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "email is required", nil)
+		return
+	}
+	resp, err := h.service.SendRegistrationOTP(r.Context(), req.Email)
+	if err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, err.Error(), nil)
+		return
+	}
+	h.jsonResponse(w, http.StatusOK, resp)
+}
+
+func (h *Handler) VerifyRegistrationOTP(w http.ResponseWriter, r *http.Request) {
+	var req VerifyRegistrationOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "invalid JSON", nil)
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.OTP) == "" {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "email and otp are required", nil)
+		return
+	}
+	resp, err := h.service.VerifyRegistrationOTP(r.Context(), &req)
+	if err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, err.Error(), nil)
+		return
+	}
+	h.jsonResponse(w, http.StatusOK, resp)
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +91,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Name = SanitizeUserInput(req.Name)
-	if req.Name == "" || req.Email == "" || req.Password == "" {
+	if req.VerificationToken == "" || req.Name == "" || req.Email == "" || req.Class == "" || req.Mobile == "" || req.Password == "" {
 		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "missing required fields", nil)
 		return
 	}

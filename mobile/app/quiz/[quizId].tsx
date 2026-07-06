@@ -9,7 +9,6 @@ import {
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import NetInfo from "@react-native-community/netinfo";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   getQuiz,
@@ -18,6 +17,7 @@ import {
   type AnswerInput,
   type QuizDetail,
 } from "../../lib/api";
+import { getAccessToken } from "../../lib/auth";
 import { colors, radius, shadow } from "../../lib/theme";
 
 function answersKey(attemptId: string): string {
@@ -68,6 +68,7 @@ export default function QuizPlayScreen() {
 
   useEffect(() => {
     void loadQuiz();
+    void getAccessToken();
   }, [loadQuiz]);
 
   useEffect(() => {
@@ -116,18 +117,9 @@ export default function QuizPlayScreen() {
     setSubmitting(true);
     setError(null);
 
-    const net = await NetInfo.fetch();
-    if (!net.isConnected) {
-      submitLockRef.current = false;
-      setSubmitting(false);
-      Alert.alert("No connection", "Your answers are saved on this device. Reconnect to submit.");
-      return;
-    }
-
     try {
       const result = await submitAttempt(quizId, attemptId, buildAnswers());
       setSubmitted(true);
-      await AsyncStorage.removeItem(answersKey(attemptId));
       router.replace({
         pathname: "/quiz/result",
         params: {
@@ -141,10 +133,16 @@ export default function QuizPlayScreen() {
           timeTaken: String(result.timeTaken),
         },
       });
+      void AsyncStorage.removeItem(answersKey(attemptId));
     } catch (err) {
       submitLockRef.current = false;
       setSubmitting(false);
-      setError(err instanceof Error ? err.message : "Submit failed");
+      const message = err instanceof Error ? err.message : "Submit failed";
+      if (message.toLowerCase().includes("network") || message.toLowerCase().includes("connect")) {
+        Alert.alert("No connection", "Your answers are saved on this device. Reconnect to submit.");
+      } else {
+        setError(message);
+      }
     }
   }, [quizId, attemptId, buildAnswers, submitted]);
 
@@ -266,31 +264,34 @@ export default function QuizPlayScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
 
-      <View style={styles.navRow}>
+      <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.secondaryButton, current === 0 ? styles.disabled : null]}
+          style={[styles.footerBtn, styles.footerBtnSecondary, current === 0 ? styles.disabled : null]}
           onPress={() => setCurrent((c) => Math.max(0, c - 1))}
-          disabled={current === 0}
+          disabled={current === 0 || submitted}
         >
-          <Text style={styles.secondaryButtonText}>Previous</Text>
+          <Text style={styles.footerBtnSecondaryText}>Prev</Text>
         </TouchableOpacity>
 
-        {current < quiz.questions.length - 1 ? (
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => setCurrent((c) => Math.min(quiz.questions.length - 1, c + 1))}
-          >
-            <Text style={styles.secondaryButtonText}>Next</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.primaryButton, submitting ? styles.disabled : null]}
-            onPress={confirmSubmit}
-            disabled={submitting || submitted}
-          >
-            <Text style={styles.primaryButtonText}>{submitting ? "Submitting…" : "Submit"}</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={[
+            styles.footerBtn,
+            styles.footerBtnSecondary,
+            current >= quiz.questions.length - 1 ? styles.disabled : null,
+          ]}
+          onPress={() => setCurrent((c) => Math.min(quiz.questions.length - 1, c + 1))}
+          disabled={current >= quiz.questions.length - 1 || submitted}
+        >
+          <Text style={styles.footerBtnSecondaryText}>Next</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.footerBtn, styles.footerBtnSubmit, submitting || submitted ? styles.disabled : null]}
+          onPress={confirmSubmit}
+          disabled={submitting || submitted}
+        >
+          <Text style={styles.footerBtnSubmitText}>{submitting ? "…" : "Submit"}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -326,6 +327,32 @@ const styles = StyleSheet.create({
     ...shadow.sm,
   },
   timerDanger: { color: colors.danger },
+  footer: {
+    flexDirection: "row",
+    gap: 10,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
+  footerBtn: {
+    flex: 1,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  footerBtnSecondary: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  footerBtnSecondaryText: { color: colors.text, fontWeight: "700", fontSize: 15 },
+  footerBtnSubmit: {
+    backgroundColor: colors.brand,
+    flex: 1.2,
+    ...shadow.brand,
+  },
+  footerBtnSubmitText: { color: colors.white, fontWeight: "800", fontSize: 15 },
   progressTrack: { height: 8, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: colors.brand, borderRadius: radius.full },
   body: { flex: 1 },

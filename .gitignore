@@ -16,6 +16,7 @@ out/
 # Go
 backend/bin/
 backend/tmp/
+backend/.tools/minio-data/
 
 # Mobile / Expo
 mobile/.expo/

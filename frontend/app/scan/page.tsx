@@ -87,9 +87,9 @@ export default function ScanPage() {
   return (
     <main style={styles.page} className="animate-in">
       <header style={styles.header}>
-        <span style={styles.eyebrow}>📷 Scan</span>
-        <h1 style={styles.title}>Scan Chapter / Questions</h1>
-        <p style={styles.subtitle}>
+        <span className="page-eyebrow">Scan</span>
+        <h1 className="page-title">Scan Chapter / Questions</h1>
+        <p className="page-subtitle">
           Turn legally-acquired study material into AI quizzes with a copyright-safe,
           transformative processing pipeline.
         </p>
@@ -124,7 +124,9 @@ export default function ScanPage() {
             <select value={board} onChange={(e) => setBoard(e.target.value)}>
               <option value="ncert">NCERT</option>
               <option value="cbse">CBSE</option>
-              <option value="state_board">State Board</option>
+              <option value="icse">ICSE</option>
+              <option value="jharkhand_board">Jharkhand Board</option>
+              <option value="bihar_board">Bihar Board</option>
             </select>
           </label>
         </div>
@@ -145,7 +147,7 @@ export default function ScanPage() {
           </span>
         </label>
 
-        <button type="submit" style={styles.submit} disabled={submitting}>
+        <button type="submit" className="btn btn-gold" disabled={submitting}>
           {submitting ? "Creating…" : "Create Scan Job"}
         </button>
       </form>
@@ -162,18 +164,6 @@ export default function ScanPage() {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: "36px 20px 56px", maxWidth: 620, margin: "0 auto", display: "grid", gap: 20 },
   header: { display: "grid", gap: 10 },
-  eyebrow: {
-    justifySelf: "start",
-    padding: "5px 12px",
-    borderRadius: 999,
-    background: "var(--brand-50)",
-    color: "var(--brand-700)",
-    fontSize: 13,
-    fontWeight: 700,
-    border: "1px solid var(--brand-100)",
-  },
-  title: { margin: 0, fontSize: 30, fontWeight: 800 },
-  subtitle: { margin: 0, color: "var(--text-muted)", fontSize: 15, lineHeight: 1.6 },
   planBar: {
     display: "flex",
     alignItems: "center",
@@ -181,41 +171,40 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
     padding: "12px 16px",
     borderRadius: "var(--r-lg)",
-    background: "var(--brand-gradient-soft)",
-    border: "1px solid var(--brand-100)",
+    background: "rgba(240, 180, 41, 0.1)",
+    border: "1px solid rgba(240, 180, 41, 0.22)",
   },
   planBadge: {
     display: "inline-block",
     padding: "3px 10px",
     borderRadius: 999,
-    background: "#fff",
-    color: "var(--brand-700)",
+    background: "rgba(255,255,255,0.95)",
+    color: "#b8860b",
     fontSize: 12,
     fontWeight: 700,
     marginRight: 10,
     boxShadow: "var(--shadow-xs)",
   },
   planScans: { fontSize: 14, color: "var(--text)", fontWeight: 600 },
-  upgradeLink: { color: "var(--brand-600)", fontWeight: 700, fontSize: 14 },
+  upgradeLink: { color: "var(--gold)", fontWeight: 700, fontSize: 14 },
   form: { display: "grid", gap: 18, padding: 22 },
   row: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
   field: { display: "grid", gap: 7 },
-  fieldLabel: { fontSize: 13, fontWeight: 700, color: "var(--text)" },
+  fieldLabel: { fontSize: 13, fontWeight: 700, color: "#0f172a" },
   terms: {
     display: "flex",
     gap: 12,
     alignItems: "flex-start",
     padding: 16,
     borderRadius: "var(--r-md)",
-    background: "var(--surface-2)",
-    border: "1px solid var(--border)",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
   },
   termsError: {
     borderColor: "var(--danger)",
     background: "var(--danger-bg)",
   },
-  termsText: { fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.55, fontWeight: 500 },
-  submit: { padding: "13px 18px", fontSize: 16 },
+  termsText: { fontSize: 13.5, color: "#64748b", lineHeight: 1.55, fontWeight: 500 },
   status: {
     margin: 0,
     padding: "12px 16px",

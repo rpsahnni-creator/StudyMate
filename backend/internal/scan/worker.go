@@ -2,9 +2,12 @@ package scan
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,11 +56,12 @@ func (n slogNotifier) QuizReady(ctx context.Context, userID, jobID, quizID int64
 
 // WorkerConfig configures polling and OCR limits.
 type WorkerConfig struct {
-	PollInterval    time.Duration
-	MaxConcurrent   int
-	MaxPagesPerJob  int
-	MinConfidence   float64
-	AIQuestionCount int
+	PollInterval     time.Duration
+	MaxConcurrent    int
+	MaxPagesPerJob   int
+	MinConfidence    float64
+	AIQuestionCount  int
+	UseGeminiVision  bool
 }
 
 type pageOutcome struct {
@@ -73,6 +77,7 @@ type Worker struct {
 	storage      storage.Client
 	ocr          ocr.Provider
 	gen          ai.Generator
+	vision       ai.VisionGenerator
 	rateLimiter  *ai.RateLimiter
 	notifier     Notifier
 	logger       *slog.Logger
@@ -88,6 +93,7 @@ func NewWorker(
 	store storage.Client,
 	ocrProvider ocr.Provider,
 	generator ai.Generator,
+	vision ai.VisionGenerator,
 	notifier Notifier,
 	logger *slog.Logger,
 	cacheService *CacheService,
@@ -118,6 +124,7 @@ func NewWorker(
 		storage:      store,
 		ocr:          ocrProvider,
 		gen:          generator,
+		vision:       vision,
 		rateLimiter:  ai.NewRateLimiter(0, 0),
 		notifier:     notifier,
 		logger:       logger,
@@ -127,10 +134,15 @@ func NewWorker(
 }
 
 func (w *Worker) Run(ctx context.Context) error {
+	ocrLabel := w.ocr.Name()
+	if w.shouldUseVisionPipeline() {
+		ocrLabel = w.vision.ProviderName()
+	}
 	w.logger.Info("scan worker started",
-		"ocr_provider", w.ocr.Name(),
+		"ocr_provider", ocrLabel,
 		"poll_interval", w.cfg.PollInterval.String(),
 		"max_concurrent", w.cfg.MaxConcurrent,
+		"gemini_vision", w.shouldUseVisionPipeline(),
 	)
 	ticker := time.NewTicker(w.cfg.PollInterval)
 	defer ticker.Stop()
@@ -198,6 +210,15 @@ func (w *Worker) ProcessJob(ctx context.Context, jobID int64) error {
 		}
 	}
 
+	if w.shouldUseVisionPipeline() {
+		return w.processJobVision(ctx, job, jobID, start)
+	}
+
+	// Never run fake stub OCR when gemini_vision is configured — it produces unrelated quizzes.
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("OCR_PROVIDER")), ocr.ProviderGeminiVision) {
+		return w.failJob(ctx, jobID, fmt.Errorf("OCR_PROVIDER=gemini_vision but vision generator is not ready — restart backend after setting GEMINI_API_KEY"))
+	}
+
 	var combinedText string
 	var outcomes []pageOutcome
 	resumeFromPipeline := job.PipelineText != nil && strings.TrimSpace(*job.PipelineText) != ""
@@ -256,7 +277,7 @@ func (w *Worker) ProcessJob(ctx context.Context, jobID int64) error {
 	}
 
 	contentHash := ContentCacheHash(combinedText)
-	skipCache := w.gen.ProviderName() == ai.ProviderStub
+	skipCache := w.gen.ProviderName() == ai.ProviderStub || w.shouldUseVisionPipeline()
 
 	if w.cacheService != nil && !skipCache && !resumeFromPipeline {
 		cached, hit, err := w.cacheService.Lookup(ctx, contentHash)
@@ -304,6 +325,16 @@ func (w *Worker) ProcessJob(ctx context.Context, jobID int64) error {
 	return w.notifier.QuizReady(ctx, job.UserID, jobID, quizID)
 }
 
+func (w *Worker) shouldUseVisionPipeline() bool {
+	if w.vision == nil {
+		return false
+	}
+	if w.cfg.UseGeminiVision {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("OCR_PROVIDER")), ocr.ProviderGeminiVision)
+}
+
 func (w *Worker) persistQuiz(ctx context.Context, job ScanJob, jobID int64, aggregateHash, ephemeralText, pageType, effectiveMode string) (int64, string, error) {
 	if w.rateLimiter != nil && !w.rateLimiter.Allow(job.UserID) {
 		return 0, "", errRateLimited
@@ -326,6 +357,7 @@ func (w *Worker) persistQuiz(ctx context.Context, job ScanJob, jobID int64, aggr
 		minQuestions = minQuestionsDefault
 	}
 
+	contentLang := ai.DetectContentLanguage(ephemeralText)
 	req := ai.GenerateRequest{
 		Text:        ephemeralText,
 		Subject:     job.Mode,
@@ -334,8 +366,8 @@ func (w *Worker) persistQuiz(ctx context.Context, job ScanJob, jobID int64, aggr
 		Mix:         mix,
 		WantSummary: wantSummary,
 		Difficulty:  "medium",
-		Language:    "hindi",
-		Rules:       ai.DefaultExplanationRules(),
+		Language:    contentLang,
+		Rules:       ai.ExplanationRulesForLanguage(contentLang),
 	}
 
 	var (
@@ -372,6 +404,7 @@ func (w *Worker) persistQuiz(ctx context.Context, job ScanJob, jobID int64, aggr
 		return 0, "", err
 	}
 
+	explanationLang := ai.ExplanationDBCode(ai.DetectQuestionsLanguage(result.Questions, contentLang))
 	for i, question := range result.Questions {
 		qType := question.Type
 		if qType == "" {
@@ -391,7 +424,7 @@ func (w *Worker) persistQuiz(ctx context.Context, job ScanJob, jobID int64, aggr
 				return 0, "", err
 			}
 		}
-		if err := w.repo.CreateQuestionExplanation(ctx, questionID, question.Explanation, "hi"); err != nil {
+		if err := w.repo.CreateQuestionExplanation(ctx, questionID, question.Explanation, explanationLang); err != nil {
 			return 0, "", err
 		}
 		if err := w.repo.LinkQuestionToQuiz(ctx, quizID, questionID, i+1); err != nil {
@@ -495,6 +528,157 @@ func (w *Worker) processPage(ctx context.Context, job ScanJob, page ScanPage) (s
 	outcome := pageOutcome{hash: hash, objectRef: objectRef}
 	result.RawText = ""
 	return ephemeralText, outcome, nil
+}
+
+func (w *Worker) processJobVision(ctx context.Context, job ScanJob, jobID int64, start time.Time) error {
+	providerName := w.vision.ProviderName()
+	defer func() {
+		metrics.ObserveScanJobDuration(providerName, time.Since(start))
+	}()
+
+	pages, err := w.repo.ListPagesByJobID(ctx, jobID)
+	if err != nil {
+		return w.failJob(ctx, jobID, err)
+	}
+	if w.cfg.MaxPagesPerJob > 0 && len(pages) > w.cfg.MaxPagesPerJob {
+		return w.failJob(ctx, jobID, fmt.Errorf("job exceeds OCR_MAX_PAGES_PER_JOB limit (%d)", w.cfg.MaxPagesPerJob))
+	}
+
+	var images []ai.VisionImage
+	var outcomes []pageOutcome
+	hashSeed := make([]byte, 0, 4096)
+
+	for _, page := range pages {
+		ref := pageObjectRef(page)
+		if ref == "" {
+			continue
+		}
+		data, err := w.storage.GetObject(ctx, ref)
+		if err != nil {
+			w.logger.Warn("vision page load failed", "job_id", jobID, "page_id", page.ID, "error", err)
+			continue
+		}
+		images = append(images, ai.VisionImage{Bytes: data, MIME: ai.MIMEFromObjectRef(ref)})
+		hashSeed = append(hashSeed, data...)
+		outcomes = append(outcomes, pageOutcome{objectRef: ref})
+		_ = w.repo.UpdatePageProcessed(ctx, page.ID, computeContentHash(job.BookID, job.ChapterID, page.PageNo, "vision"), 0.99, ai.PageTypeChapterText)
+	}
+	if len(images) == 0 {
+		return w.failJob(ctx, jobID, fmt.Errorf("no page images available for gemini vision"))
+	}
+
+	if err := w.repo.UpdateJobStatus(ctx, jobID, ScanJobOCRComplete, 50, nil); err != nil {
+		return err
+	}
+
+	effectiveMode := normalizeScanMode(job.Mode)
+	if effectiveMode == "" {
+		effectiveMode = ai.ScanModeChapter
+	}
+
+	chapter := derefStr(job.ChapterTitle)
+	genReq := ai.GenerateRequest{
+		Board:              "ncert",
+		Subject:            job.Mode,
+		Chapter:            chapter,
+		ScanMode:           effectiveMode,
+		FlexibleVision:     true,
+		VisionMaxQuestions: ai.VisionMaxQuestionsDefault(),
+		WantSummary:        effectiveMode == ai.ScanModeChapter,
+		Difficulty:         "medium",
+		Language:           ai.LanguageAuto,
+		Rules:              ai.ExplanationRulesForLanguage(ai.LanguageAuto),
+	}
+
+	w.logger.Info("gemini vision generating page-grounded quiz",
+		"job_id", jobID,
+		"chapter", chapter,
+		"mode", effectiveMode,
+		"pages", len(images),
+		"max_questions", genReq.VisionMaxQuestions,
+	)
+
+	if w.rateLimiter != nil && !w.rateLimiter.Allow(job.UserID) {
+		w.logger.Warn("ai rate limit hit, requeueing job", "user_id", job.UserID, "job_id", jobID)
+		_ = w.repo.UpdateJobStatus(ctx, jobID, ScanJobPending, 40, nil)
+		return nil
+	}
+
+	result, genErr := w.vision.GenerateFromImages(ctx, ai.VisionRequest{GenerateRequest: genReq, Images: images})
+	images = nil
+
+	sum := sha256.Sum256(hashSeed)
+	hashSeed = nil
+	contentHash := hex.EncodeToString(sum[:])
+
+	ai.LogGeneration(ctx, w.db, w.logger, jobID, w.vision.ProviderName(), w.vision.ModelName(), genReq, result, genErr)
+	if genErr != nil {
+		return w.failJob(ctx, jobID, genErr)
+	}
+
+	quizID, summary, err := w.persistVisionQuiz(ctx, job, jobID, contentHash, result, effectiveMode)
+	if err != nil {
+		return w.failJob(ctx, jobID, err)
+	}
+
+	w.deletePageObjects(ctx, outcomes)
+	if summary != "" {
+		_ = w.repo.UpdateJobChapterSummary(ctx, jobID, summary)
+	}
+	if err := w.repo.UpdateJobStatus(ctx, jobID, ScanJobQuizReady, 100, nil); err != nil {
+		return err
+	}
+	metrics.RecordScanJob("completed")
+	return w.notifier.QuizReady(ctx, job.UserID, jobID, quizID)
+}
+
+func (w *Worker) persistVisionQuiz(ctx context.Context, job ScanJob, jobID int64, aggregateHash string, result *ai.GenerateResult, effectiveMode string) (int64, string, error) {
+	sourceType := ai.SourceAIGenerated
+	if effectiveMode == ai.ScanModeExistingQuestions {
+		sourceType = ai.SourceScannedExisting
+	}
+	title := fmt.Sprintf("Quiz for job %d", jobID)
+	if effectiveMode == ai.ScanModeExistingQuestions {
+		title = fmt.Sprintf("Extracted quiz for job %d", jobID)
+	}
+
+	quizID, err := w.repo.CreateQuizRecord(ctx, job.ChapterID, aggregateHash, title, len(result.Questions))
+	if err != nil {
+		return 0, "", err
+	}
+
+	explanationLang := ai.ExplanationDBCode(ai.DetectQuestionsLanguage(result.Questions, ai.LanguageAuto))
+	for i, question := range result.Questions {
+		qType := question.Type
+		if qType == "" {
+			qType = ai.QuestionTypeMCQ
+		}
+		questionID, err := w.repo.CreateQuestion(ctx, job.ChapterID, aggregateHash, question.Text, qType, sourceType, question.Difficulty)
+		if err != nil {
+			return 0, "", err
+		}
+		for idx, option := range question.Options {
+			isCorrect := idx == question.CorrectIndex
+			label := option.Label
+			if label == "" {
+				label = string(rune('A' + idx))
+			}
+			if err := w.repo.CreateQuestionOption(ctx, questionID, label, option.Text, isCorrect); err != nil {
+				return 0, "", err
+			}
+		}
+		if err := w.repo.CreateQuestionExplanation(ctx, questionID, question.Explanation, explanationLang); err != nil {
+			return 0, "", err
+		}
+		if err := w.repo.LinkQuestionToQuiz(ctx, quizID, questionID, i+1); err != nil {
+			return 0, "", err
+		}
+	}
+
+	if err := w.repo.UpdateJobQuizID(ctx, jobID, quizID); err != nil {
+		return 0, "", err
+	}
+	return quizID, result.ChapterSummary, nil
 }
 
 func (w *Worker) deletePageObjects(ctx context.Context, outcomes []pageOutcome) {

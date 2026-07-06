@@ -10,8 +10,8 @@ import (
 
 func TestValidateScanJob_BoardRequired(t *testing.T) {
 	errs := ValidateScanJob(ScanJobRequest{PageCount: 1})
-	if len(errs) == 0 {
-		t.Fatal("expected board validation error")
+	if len(errs) != 0 {
+		t.Fatalf("empty board should default to ncert, got %+v", errs)
 	}
 }
 
@@ -19,6 +19,37 @@ func TestValidateScanJob_InvalidBoard(t *testing.T) {
 	errs := ValidateScanJob(ScanJobRequest{Board: "invalid", PageCount: 1})
 	if len(errs) == 0 {
 		t.Fatal("expected invalid board error")
+	}
+}
+
+func TestNormalizeBoard_AcceptsCommonInput(t *testing.T) {
+	cases := map[string]string{
+		"":                "ncert",
+		"NCERT":           "ncert",
+		"cbse":            "cbse",
+		"ICSE":            "icse",
+		"Jharkhand Board": "jharkhand_board",
+		"Bihar Board":     "bihar_board",
+		"state board":     "state_board",
+	}
+	for in, want := range cases {
+		if got := NormalizeBoard(in); got != want {
+			t.Fatalf("NormalizeBoard(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestValidateScanJob_JharkhandBoard(t *testing.T) {
+	errs := ValidateScanJob(ScanJobRequest{Board: "jharkhand_board", PageCount: 1})
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %+v", errs)
+	}
+}
+
+func TestValidateScanJob_StateBoardLabel(t *testing.T) {
+	errs := ValidateScanJob(ScanJobRequest{Board: "state board", PageCount: 1})
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors for state board label, got %+v", errs)
 	}
 }
 

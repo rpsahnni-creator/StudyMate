@@ -27,9 +27,33 @@ func (e ValidationError) Error() string {
 }
 
 var allowedBoards = map[string]struct{}{
-	"ncert":       {},
-	"cbse":        {},
-	"state_board": {},
+	"ncert":           {},
+	"cbse":            {},
+	"icse":            {},
+	"jharkhand_board": {},
+	"bihar_board":     {},
+	"state_board":     {}, // legacy alias
+}
+
+// NormalizeBoard maps common user input to a canonical board id.
+func NormalizeBoard(board string) string {
+	b := strings.ToLower(strings.TrimSpace(board))
+	switch b {
+	case "", "ncert":
+		return "ncert"
+	case "cbse":
+		return "cbse"
+	case "icse":
+		return "icse"
+	case "jharkhand", "jharkhand board", "jharkhand-board", "jharkhand_board", "jac":
+		return "jharkhand_board"
+	case "bihar", "bihar board", "bihar-board", "bihar_board", "bseb":
+		return "bihar_board"
+	case "state board", "state-board", "stateboard", "state_board":
+		return "state_board"
+	default:
+		return b
+	}
 }
 
 var scanSubjectPattern = regexp.MustCompile(`^[a-zA-Z0-9 ]*$`)
@@ -48,8 +72,12 @@ func ScanJobRequestFromCreate(req CreateScanJobRequest) ScanJobRequest {
 	if pageCount <= 0 {
 		pageCount = 1
 	}
+	board := NormalizeBoard(req.Board)
+	if board == "" {
+		board = "ncert"
+	}
 	return ScanJobRequest{
-		Board:     req.Board,
+		Board:     board,
 		Subject:   req.SourceText,
 		Chapter:   "",
 		PageCount: pageCount,
@@ -60,11 +88,11 @@ func ScanJobRequestFromCreate(req CreateScanJobRequest) ScanJobRequest {
 func ValidateScanJob(body ScanJobRequest) []ValidationError {
 	var errs []ValidationError
 
-	board := strings.ToLower(strings.TrimSpace(body.Board))
+	board := NormalizeBoard(body.Board)
 	if board == "" {
 		errs = append(errs, ValidationError{Field: "board", Message: "board is required"})
 	} else if _, ok := allowedBoards[board]; !ok {
-		errs = append(errs, ValidationError{Field: "board", Message: "board must be ncert, cbse, or state_board"})
+		errs = append(errs, ValidationError{Field: "board", Message: "board must be ncert, cbse, icse, jharkhand_board, or bihar_board"})
 	}
 
 	if body.Subject != "" {

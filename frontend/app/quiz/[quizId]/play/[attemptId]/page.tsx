@@ -249,19 +249,30 @@ export default function QuizPlayPage() {
         })}
       </div>
 
-      <div style={styles.navRow}>
-        <button className="btn-reset" style={styles.secondaryButton} onClick={() => goTo(current - 1)} disabled={current === 0}>
-          ← Previous
+      <div style={styles.footer}>
+        <button
+          className="btn-reset"
+          style={styles.footerBtnSecondary}
+          onClick={() => goTo(current - 1)}
+          disabled={current === 0 || submitted}
+        >
+          ← Prev
         </button>
-        {current < quiz.questions.length - 1 ? (
-          <button className="btn-reset" style={styles.secondaryButton} onClick={() => goTo(current + 1)}>
-            Next →
-          </button>
-        ) : (
-          <button style={styles.primaryButton} onClick={confirmAndSubmit} disabled={submitting || submitted}>
-            {submitting ? "Submitting…" : "Submit Quiz"}
-          </button>
-        )}
+        <button
+          className="btn-reset"
+          style={styles.footerBtnSecondary}
+          onClick={() => goTo(current + 1)}
+          disabled={current >= quiz.questions.length - 1 || submitted}
+        >
+          Next →
+        </button>
+        <button
+          style={styles.footerBtnSubmit}
+          onClick={confirmAndSubmit}
+          disabled={submitting || submitted}
+        >
+          {submitting ? "Submitting…" : "Submit"}
+        </button>
       </div>
 
       {error ? <p style={styles.error}>{error}</p> : null}
@@ -285,6 +296,32 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--surface)",
     border: "1px solid var(--border)",
     boxShadow: "var(--shadow-xs)",
+  },
+  footer: { display: "flex", flexDirection: "row", gap: 10, marginTop: 8 },
+  footerBtnSecondary: {
+    flex: 1,
+    background: "var(--surface)",
+    color: "var(--text)",
+    border: "1px solid var(--border-strong)",
+    borderRadius: "var(--r-md)",
+    padding: "13px 12px",
+    fontSize: 15,
+    fontWeight: 650,
+    cursor: "pointer",
+    minHeight: 48,
+  },
+  footerBtnSubmit: {
+    flex: 1.2,
+    background: "var(--brand-gradient)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "var(--r-md)",
+    padding: "13px 16px",
+    fontSize: 15,
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow: "var(--shadow-brand)",
+    minHeight: 48,
   },
   dots: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 },
   dot: { width: 24, height: 24, borderRadius: 999, border: "none", cursor: "pointer", transition: "transform 0.12s ease" },

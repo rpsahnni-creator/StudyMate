@@ -46,3 +46,17 @@ func envCount(key string, fallback int) int {
 	}
 	return n
 }
+
+// VisionMaxQuestionsDefault is the soft upper cap for page-grounded vision quizzes.
+func VisionMaxQuestionsDefault() int {
+	return envCount("AI_VISION_MAX_QUESTIONS", 25)
+}
+
+// VisionMinQuestionsDefault is the minimum acceptable vision output.
+func VisionMinQuestionsDefault() int {
+	n := envCount("AI_VISION_MIN_QUESTIONS", 1)
+	if n < 1 {
+		return 1
+	}
+	return n
+}

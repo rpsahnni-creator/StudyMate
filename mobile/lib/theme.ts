@@ -1,12 +1,14 @@
 export const colors = {
-  brand: "#6366f1",
-  brandDark: "#4f46e5",
-  brandDarker: "#4338ca",
-  accent: "#8b5cf6",
-  brandSoft: "#eef2ff",
-  brandSoftBorder: "#e0e7ff",
+  brand: "#20B2AA",
+  brandDark: "#1A9A93",
+  brandDarker: "#158880",
+  accent: "#9ACD32",
+  accentDark: "#7BA428",
+  brandSoft: "#E6F7F6",
+  brandSoftBorder: "#B2E8E4",
+  accentSoft: "#EEF8D4",
 
-  bg: "#f6f7fb",
+  bg: "#9ACD32",
   surface: "#ffffff",
   surfaceAlt: "#f8fafc",
 
@@ -60,7 +62,7 @@ export const shadow = {
     elevation: 5,
   },
   brand: {
-    shadowColor: "#6366f1",
+    shadowColor: "#20B2AA",
     shadowOpacity: 0.4,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },

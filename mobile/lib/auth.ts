@@ -6,6 +6,14 @@ export { API_URL };
 
 export const TOKEN_KEY = "studyapp_access_token";
 export const REFRESH_KEY = "studyapp_refresh_token";
+export const USER_KEY = "studyapp_user";
+
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
 
 export interface TokenResponse {
   access_token: string;
@@ -21,13 +29,19 @@ export interface TokenResponse {
 }
 
 let refreshPromise: Promise<string | null> | null = null;
+let cachedAccessToken: string | null | undefined;
+let secureStoreAvailable: boolean | null = null;
 
 async function isSecureStoreAvailable(): Promise<boolean> {
-  try {
-    return await SecureStore.isAvailableAsync();
-  } catch {
-    return false;
+  if (secureStoreAvailable !== null) {
+    return secureStoreAvailable;
   }
+  try {
+    secureStoreAvailable = await SecureStore.isAvailableAsync();
+  } catch {
+    secureStoreAvailable = false;
+  }
+  return secureStoreAvailable;
 }
 
 async function storageGet(key: string): Promise<string | null> {
@@ -66,14 +80,47 @@ async function storageDelete(key: string): Promise<void> {
 }
 
 export async function saveTokens(access: string, refresh?: string): Promise<void> {
+  cachedAccessToken = access;
   await storageSet(TOKEN_KEY, access);
   if (refresh) {
     await storageSet(REFRESH_KEY, refresh);
   }
 }
 
+export async function saveUser(user: AuthUser): Promise<void> {
+  await storageSet(USER_KEY, JSON.stringify(user));
+}
+
+export async function getUser(): Promise<AuthUser | null> {
+  const raw = await storageGet(USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  try {
+    const res = await apiCall("/auth/me");
+    if (!res.ok) return null;
+    const data = (await res.json()) as AuthUser;
+    if (!data?.name) return null;
+    await saveUser(data);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export async function getAccessToken(): Promise<string | null> {
-  return storageGet(TOKEN_KEY);
+  if (cachedAccessToken !== undefined) {
+    return cachedAccessToken;
+  }
+  const token = await storageGet(TOKEN_KEY);
+  cachedAccessToken = token;
+  return token;
 }
 
 export async function getRefreshToken(): Promise<string | null> {
@@ -81,8 +128,10 @@ export async function getRefreshToken(): Promise<string | null> {
 }
 
 export async function clearTokens(): Promise<void> {
+  cachedAccessToken = null;
   await storageDelete(TOKEN_KEY);
   await storageDelete(REFRESH_KEY);
+  await storageDelete(USER_KEY);
 }
 
 export async function refreshAccessToken(): Promise<string | null> {
@@ -138,10 +187,29 @@ export async function resetPassword(
   }
 }
 
+export function formatApiErrorBody(data: {
+  message?: string;
+  error?: string;
+  details?: Record<string, string> | string;
+}): string {
+  let msg = data.message ?? data.error ?? "Request failed";
+  if (data.details && typeof data.details === "object" && !Array.isArray(data.details)) {
+    const parts = Object.entries(data.details).map(([key, value]) => `${key}: ${value}`);
+    if (parts.length > 0) {
+      msg = `${msg}\n${parts.join("\n")}`;
+    }
+  }
+  return msg;
+}
+
 export async function parseApiError(res: Response): Promise<string> {
   try {
-    const data = (await res.json()) as { message?: string; error?: string };
-    return data.message ?? data.error ?? `Request failed (${res.status})`;
+    const data = (await res.json()) as {
+      message?: string;
+      error?: string;
+      details?: Record<string, string>;
+    };
+    return formatApiErrorBody(data);
   } catch {
     return `Request failed (${res.status})`;
   }

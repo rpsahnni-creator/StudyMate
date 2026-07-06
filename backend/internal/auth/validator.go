@@ -14,6 +14,8 @@ var (
 	ErrPasswordTooCommon   = errors.New("password is too common")
 	ErrEmailInvalid        = errors.New("invalid email address")
 	ErrEmailTooLong        = errors.New("email must be at most 254 characters")
+	ErrMobileInvalid       = errors.New("invalid mobile number; use 10-digit Indian mobile")
+	ErrClassRequired       = errors.New("class is required")
 )
 
 // ValidatePassword enforces password strength rules.
@@ -58,6 +60,43 @@ func ValidateEmail(email string) (string, error) {
 		return "", ErrEmailInvalid
 	}
 	return email, nil
+}
+
+// ValidateMobile normalizes and validates a 10-digit Indian mobile number.
+func ValidateMobile(mobile string) (string, error) {
+	mobile = strings.TrimSpace(mobile)
+	mobile = strings.ReplaceAll(mobile, " ", "")
+	mobile = strings.ReplaceAll(mobile, "-", "")
+	if strings.HasPrefix(mobile, "+91") {
+		mobile = mobile[3:]
+	}
+	if strings.HasPrefix(mobile, "91") && len(mobile) == 12 {
+		mobile = mobile[2:]
+	}
+	if len(mobile) != 10 {
+		return "", ErrMobileInvalid
+	}
+	for _, r := range mobile {
+		if r < '0' || r > '9' {
+			return "", ErrMobileInvalid
+		}
+	}
+	if mobile[0] < '6' {
+		return "", ErrMobileInvalid
+	}
+	return mobile, nil
+}
+
+// ValidateClass ensures a non-empty class label for students.
+func ValidateClass(class string) (string, error) {
+	class = SanitizeUserInput(class)
+	if class == "" {
+		return "", ErrClassRequired
+	}
+	if len(class) > 50 {
+		class = class[:50]
+	}
+	return class, nil
 }
 
 // SanitizeUserInput trims, strips null bytes, and caps length.

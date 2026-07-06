@@ -16,14 +16,52 @@ type User struct {
 	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// RegisterRequest is the payload for user registration.
+// RegisterRequest is the payload for user registration after email OTP verification.
 type RegisterRequest struct {
-	Name                string `json:"name" validate:"required,min=2,max=100"`
-	Email               string `json:"email" validate:"required,email"`
-	Password            string `json:"password" validate:"required,min=8"`
-	PasswordConfirm      string `json:"password_confirm" validate:"required,eqfield=Password"`
-	Phone               *string `json:"phone,omitempty"`
-	AcceptTerms         bool   `json:"accept_terms" validate:"required,eq=true"`
+	VerificationToken string `json:"verification_token" validate:"required"`
+	Name              string `json:"name" validate:"required,min=2,max=100"`
+	Email             string `json:"email" validate:"required,email"`
+	Class             string `json:"class" validate:"required"`
+	Mobile            string `json:"mobile" validate:"required"`
+	Password          string `json:"password" validate:"required,min=8"`
+	PasswordConfirm   string `json:"password_confirm" validate:"required,eqfield=Password"`
+	AcceptTerms       bool   `json:"accept_terms" validate:"required,eq=true"`
+}
+
+// SendRegistrationOTPResponse confirms OTP dispatch (dev_otp only in development stub mode).
+type SendRegistrationOTPResponse struct {
+	Message string `json:"message"`
+	DevOTP  string `json:"dev_otp,omitempty"`
+}
+
+// SendRegistrationOTPRequest requests an email OTP before signup.
+type SendRegistrationOTPRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+// VerifyRegistrationOTPRequest verifies the email OTP.
+type VerifyRegistrationOTPRequest struct {
+	Email string `json:"email" validate:"required,email"`
+	OTP   string `json:"otp" validate:"required,len=6"`
+}
+
+// VerifyRegistrationOTPResponse returns a short-lived token for completing registration.
+type VerifyRegistrationOTPResponse struct {
+	VerificationToken string `json:"verification_token"`
+	ExpiresIn         int64  `json:"expires_in"`
+}
+
+// EmailVerificationOTP stores a hashed email OTP and optional verification token.
+type EmailVerificationOTP struct {
+	ID                int64
+	Email             string
+	OTPHash           string
+	Attempts          int
+	Verified          bool
+	VerificationToken *string
+	TokenExpiresAt    *time.Time
+	ExpiresAt         time.Time
+	CreatedAt         time.Time
 }
 
 // LoginRequest is the payload for user login.

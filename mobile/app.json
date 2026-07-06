@@ -14,6 +14,7 @@
     },
     "android": {
       "package": "com.kijitechnology.studyapp",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#6366f1"
