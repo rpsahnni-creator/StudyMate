@@ -1,0 +1,28 @@
+{
+  "name": "study-app",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "mobile"
+  ],
+  "scripts": {
+    "frontend": "npm --prefix frontend run dev",
+    "mobile": "npm --prefix mobile run start",
+    "backend": "go run ./backend/cmd/api"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "overrides": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native-gesture-handler": "2.32.0",
+    "react-native-reanimated": "4.5.0",
+    "react-native-worklets": "0.10.0"
+  }
+}

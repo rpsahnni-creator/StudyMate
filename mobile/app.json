@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "StudyApp",
+    "slug": "studyapp",
+    "version": "1.0.0",
+    "scheme": "studyapp",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/icon.png",
+    "backgroundColor": "#6366f1",
+    "ios": {
+      "bundleIdentifier": "com.kijitechnology.studyapp",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.kijitechnology.studyapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#6366f1"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "StudyApp needs gallery access to upload textbook pages.",
+          "cameraPermission": "StudyApp needs camera access to scan textbook pages."
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#6366f1"
+        }
+      ]
+    ]
+  }
+}

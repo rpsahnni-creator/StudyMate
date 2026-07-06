@@ -1,0 +1,1622 @@
+openapi: "3.0.3"
+info:
+  title: StudyApp API
+  version: "1.0.0"
+  description: Scan-to-Quiz educational platform API
+
+servers:
+  - url: http://localhost:8080
+    description: Development
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - VALIDATION_ERROR
+            - CONFLICT
+            - RATE_LIMIT_EXCEEDED
+            - FEATURE_NOT_AVAILABLE
+            - SCAN_LIMIT_EXCEEDED
+            - INTERNAL_ERROR
+            - PAYMENT_FAILED
+        message:
+          type: string
+        details:
+          nullable: true
+        trace_id:
+          type: string
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    MeResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        email_verified:
+          type: boolean
+
+    RegisterRequest:
+      type: object
+      required: [name, email, password, password_confirm, accept_terms]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        password_confirm:
+          type: string
+        phone:
+          type: string
+        accept_terms:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RefreshTokenRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          format: int64
+        token_type:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserInfo"
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password, new_password_confirm]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+        new_password_confirm:
+          type: string
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password, new_password_confirm]
+      properties:
+        token:
+          type: string
+        new_password:
+          type: string
+        new_password_confirm:
+          type: string
+
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        interval:
+          type: string
+        features:
+          type: object
+        isPopular:
+          type: boolean
+
+    CheckoutRequest:
+      type: object
+      required: [planId]
+      properties:
+        planId:
+          type: string
+        provider:
+          type: string
+
+    CheckoutResponse:
+      type: object
+      properties:
+        orderId:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        keyId:
+          type: string
+        provider:
+          type: string
+        payuUrl:
+          type: string
+        formData:
+          type: object
+          additionalProperties:
+            type: string
+
+    Entitlements:
+      type: object
+      properties:
+        has_active_sub:
+          type: boolean
+        plan:
+          type: string
+        scans_per_day:
+          type: integer
+        expires_at:
+          type: string
+          format: date-time
+        days_remaining:
+          type: integer
+
+    ScanJob:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        book_id:
+          type: integer
+          format: int64
+        chapter_id:
+          type: integer
+          format: int64
+        mode:
+          type: string
+        status:
+          type: string
+        progress:
+          type: integer
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateScanJobRequest:
+      type: object
+      properties:
+        book_id:
+          type: integer
+          format: int64
+        chapter_id:
+          type: integer
+          format: int64
+        mode:
+          type: string
+        page_no:
+          type: integer
+        source_text:
+          type: string
+        board:
+          type: string
+        accepted_terms:
+          type: boolean
+
+    ScanJobResponse:
+      type: object
+      properties:
+        job:
+          $ref: "#/components/schemas/ScanJob"
+        pages:
+          type: array
+          items:
+            type: object
+        quiz_id:
+          type: integer
+          format: int64
+        message:
+          type: string
+
+    UploadStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        progress:
+          type: integer
+        canRetry:
+          type: boolean
+        message:
+          type: string
+
+    UploadCompleteRequest:
+      type: object
+      required: [jobId, pageNumber, totalChunks]
+      properties:
+        jobId:
+          type: integer
+          format: int64
+        pageNumber:
+          type: integer
+        totalChunks:
+          type: integer
+
+    QuizDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        subject:
+          type: string
+        board:
+          type: string
+        totalQuestions:
+          type: integer
+        timeLimit:
+          type: integer
+        questions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              text:
+                type: string
+              type:
+                type: string
+              options:
+                type: array
+                items:
+                  type: object
+
+    CreateAttemptRequest:
+      type: object
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+
+    CreateAttemptResponse:
+      type: object
+      properties:
+        attemptId:
+          type: integer
+          format: int64
+        expiresAt:
+          type: string
+          format: date-time
+
+    SubmitAttemptRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items:
+            type: object
+            properties:
+              questionId:
+                type: integer
+              selectedOptionId:
+                type: integer
+                nullable: true
+        submittedAt:
+          type: string
+          format: date-time
+
+    AttemptResult:
+      type: object
+      properties:
+        attemptId:
+          type: integer
+        score:
+          type: number
+        correctCount:
+          type: integer
+        wrongCount:
+          type: integer
+        skippedCount:
+          type: integer
+        totalQuestions:
+          type: integer
+        timeTaken:
+          type: integer
+
+    ReviewDetail:
+      type: object
+      properties:
+        score:
+          type: number
+        questions:
+          type: array
+          items:
+            type: object
+
+    ReportsPage:
+      type: object
+      properties:
+        reports:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+        page:
+          type: integer
+
+    Analytics:
+      type: object
+      properties:
+        summary:
+          type: object
+        subjectBreakdown:
+          type: array
+          items:
+            type: object
+        weeklyScores:
+          type: array
+          items:
+            type: object
+        recentActivity:
+          type: array
+          items:
+            type: object
+
+    TopicAnalytics:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: object
+
+    ResolvedFlags:
+      type: object
+      additionalProperties:
+        type: boolean
+
+    FlagWithStats:
+      type: object
+      properties:
+        key:
+          type: string
+        enabled:
+          type: boolean
+        rollout_percentage:
+          type: integer
+        override_count:
+          type: integer
+        ai_call_count_24h:
+          type: integer
+
+    AdminSetFlagRequest:
+      type: object
+      required: [key, enabled]
+      properties:
+        key:
+          type: string
+        enabled:
+          type: boolean
+        rollout_percentage:
+          type: integer
+
+    CareerGoal:
+      type: object
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        examName:
+          type: string
+        targetMonths:
+          type: integer
+        subjectAreas:
+          type: array
+          items:
+            type: string
+
+    SelectGoalRequest:
+      type: object
+      required: [goalId]
+      properties:
+        goalId:
+          type: integer
+        targetDate:
+          type: string
+          format: date
+
+    MyGoal:
+      type: object
+      properties:
+        studentGoalId:
+          type: integer
+        goalId:
+          type: integer
+        name:
+          type: string
+        examName:
+          type: string
+        targetDate:
+          type: string
+        status:
+          type: string
+        progress:
+          type: object
+
+    TodayPractice:
+      type: object
+      properties:
+        setId:
+          type: integer
+        date:
+          type: string
+        status:
+          type: string
+        questions:
+          type: array
+          items:
+            type: object
+
+    SubmitPracticeRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items:
+            type: object
+        submittedAt:
+          type: string
+          format: date-time
+
+    NotificationPreferences:
+      type: object
+      properties:
+        push_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        sms_enabled:
+          type: boolean
+        max_push_per_day:
+          type: integer
+        max_email_per_week:
+          type: integer
+
+    RegisterDeviceRequest:
+      type: object
+      required: [token, platform]
+      properties:
+        token:
+          type: string
+        platform:
+          type: string
+        app_version:
+          type: string
+        os_version:
+          type: string
+
+    SendNotificationRequest:
+      type: object
+      required: [channel, category, template_key]
+      properties:
+        channel:
+          type: string
+        category:
+          type: string
+        template_key:
+          type: string
+        data:
+          type: object
+
+    UsersPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    JobsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+
+    AICostSummary:
+      type: object
+      properties:
+        total_cost_estimate:
+          type: number
+        total_requests:
+          type: integer
+        rows:
+          type: array
+          items:
+            type: object
+
+    AuditLogPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+
+    ContentFlagsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ValidationError:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Service healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          description: Dependency unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /openapi.yaml:
+    get:
+      summary: OpenAPI specification
+      security: []
+      responses:
+        "200":
+          description: OpenAPI YAML document
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /auth/register:
+    post:
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/forgot-password:
+    post:
+      summary: Initiate password reset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+      responses:
+        "200":
+          description: Reset email sent if account exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/reset-password:
+    post:
+      summary: Complete password reset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/change-password:
+    post:
+      summary: Change password (authenticated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/devices/register:
+    post:
+      summary: Register FCM device token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDeviceRequest"
+      responses:
+        "201":
+          description: Device registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /me/features:
+    get:
+      summary: Get resolved feature flags for current user
+      responses:
+        "200":
+          description: Feature flags
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolvedFlags"
+
+  /plans:
+    get:
+      summary: List subscription plans
+      security: []
+      responses:
+        "200":
+          description: Available plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+
+  /billing/checkout:
+    post:
+      summary: Create payment checkout session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutRequest"
+      responses:
+        "200":
+          description: Checkout details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /billing/webhook/razorpay:
+    post:
+      summary: Razorpay payment webhook
+      security: []
+      responses:
+        "200":
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /billing/webhook/payu:
+    post:
+      summary: PayU payment webhook
+      security: []
+      responses:
+        "200":
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /users/me/subscription:
+    get:
+      summary: Get current user subscription entitlements
+      responses:
+        "200":
+          description: Entitlements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Entitlements"
+
+  /scan/jobs:
+    post:
+      summary: Create a scan job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScanJobRequest"
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanJobResponse"
+        "429":
+          description: Daily scan limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /scan/upload:
+    post:
+      summary: Create scan job with image upload
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+                mode:
+                  type: string
+                board:
+                  type: string
+                book_id:
+                  type: string
+                chapter_id:
+                  type: string
+                page_no:
+                  type: string
+                accepted_terms:
+                  type: string
+      responses:
+        "201":
+          description: Job created with upload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanJobResponse"
+
+  /scan/jobs/{jobID}:
+    get:
+      summary: Get scan job by ID
+      parameters:
+        - name: jobID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Scan job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /scan/uploads/{jobID}/status:
+    get:
+      summary: Get upload/processing status
+      parameters:
+        - name: jobID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Upload status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadStatusResponse"
+
+  /scan/upload/chunk:
+    post:
+      summary: Upload a page chunk (resumable)
+      parameters:
+        - name: X-Job-Id
+          in: header
+          required: true
+          schema:
+            type: integer
+        - name: X-Page-Number
+          in: header
+          required: true
+          schema:
+            type: integer
+        - name: X-Chunk-Index
+          in: header
+          required: true
+          schema:
+            type: integer
+        - name: X-Total-Chunks
+          in: header
+          required: true
+          schema:
+            type: integer
+        - name: X-Chunk-Checksum
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                chunk:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Chunk received
+        "409":
+          description: Chunk already uploaded
+
+  /scan/upload/complete:
+    post:
+      summary: Complete chunked upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadCompleteRequest"
+      responses:
+        "200":
+          description: Upload composed
+
+  /quizzes/{quizID}:
+    get:
+      summary: Get quiz detail (no answers)
+      parameters:
+        - name: quizID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Quiz detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /quizzes/{quizID}/attempts:
+    post:
+      summary: Start a quiz attempt
+      parameters:
+        - name: quizID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAttemptRequest"
+      responses:
+        "201":
+          description: Attempt started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAttemptResponse"
+
+  /quizzes/{quizID}/attempts/{attemptID}/submit:
+    put:
+      summary: Submit quiz attempt answers
+      parameters:
+        - name: quizID
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: attemptID
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitAttemptRequest"
+      responses:
+        "200":
+          description: Attempt scored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttemptResult"
+        "409":
+          description: Attempt not in submittable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /quizzes/{quizID}/attempts/{attemptID}/review:
+    get:
+      summary: Review completed attempt
+      parameters:
+        - name: quizID
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: attemptID
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Review detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewDetail"
+
+  /users/me/reports:
+    get:
+      summary: Paginated quiz attempt reports
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Reports page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportsPage"
+
+  /users/me/analytics:
+    get:
+      summary: User analytics dashboard
+      responses:
+        "200":
+          description: Analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analytics"
+
+  /users/me/analytics/topics:
+    get:
+      summary: Topic-level analytics
+      responses:
+        "200":
+          description: Topic analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopicAnalytics"
+
+  /user/preferences:
+    get:
+      summary: Get notification preferences
+      responses:
+        "200":
+          description: Preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferences"
+    put:
+      summary: Update notification preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationPreferences"
+      responses:
+        "200":
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferences"
+
+  /notifications/send:
+    post:
+      summary: Queue a notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendNotificationRequest"
+      responses:
+        "202":
+          description: Notification queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /webhooks/email/resend:
+    post:
+      summary: Resend email delivery webhook
+      security: []
+      responses:
+        "200":
+          description: Webhook acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /goals:
+    get:
+      summary: List available career goals
+      security: []
+      responses:
+        "200":
+          description: Career goals catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CareerGoal"
+
+  /goals/select:
+    post:
+      summary: Select or switch career goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelectGoalRequest"
+      responses:
+        "200":
+          description: Goal selected
+        "403":
+          description: Feature not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /goals/my:
+    get:
+      summary: Get active career goal
+      responses:
+        "200":
+          description: Active goal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyGoal"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Abandon active career goal
+      responses:
+        "200":
+          description: Goal abandoned
+
+  /goals/my/practice/today:
+    get:
+      summary: Get today's practice set
+      responses:
+        "200":
+          description: Today's practice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayPractice"
+
+  /goals/my/practice/{setId}/submit:
+    post:
+      summary: Submit daily practice answers
+      parameters:
+        - name: setId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitPracticeRequest"
+      responses:
+        "200":
+          description: Practice scored
+
+  /goals/my/practice/history:
+    get:
+      summary: Practice history (last 30 days)
+      responses:
+        "200":
+          description: Practice history
+
+  /goals/my/skills:
+    get:
+      summary: Skill gap analysis
+      responses:
+        "200":
+          description: Skill gaps
+
+  /admin/features:
+    get:
+      summary: List feature flags with stats (admin)
+      responses:
+        "200":
+          description: Feature flags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FlagWithStats"
+    post:
+      summary: Update a feature flag (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSetFlagRequest"
+      responses:
+        "200":
+          description: Flag updated
+
+  /admin/cache/{contentHash}:
+    delete:
+      summary: Invalidate cached quiz by content hash (admin)
+      parameters:
+        - name: contentHash
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cache invalidated
+
+  /admin/users:
+    get:
+      summary: List users (admin)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Users page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsersPage"
+
+  /admin/users/{userID}/suspend:
+    put:
+      summary: Suspend a user (admin)
+      parameters:
+        - name: userID
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: User suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /admin/users/{userID}/unsuspend:
+    put:
+      summary: Unsuspend a user (admin)
+      parameters:
+        - name: userID
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User unsuspended
+
+  /admin/jobs:
+    get:
+      summary: List scan jobs (admin)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Jobs page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobsPage"
+
+  /admin/jobs/{jobID}/retry:
+    post:
+      summary: Retry a failed scan job (admin)
+      parameters:
+        - name: jobID
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job queued for retry
+        "409":
+          description: Job not retryable
+
+  /admin/ai-costs:
+    get:
+      summary: AI cost summary (admin)
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: AI costs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AICostSummary"
+
+  /admin/audit-logs:
+    get:
+      summary: Audit log entries (admin)
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPage"
+
+  /admin/content-flags:
+    get:
+      summary: Content moderation flags (admin)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Content flags
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContentFlagsPage"
+
+  /admin/content-flags/{flagID}/resolve:
+    put:
+      summary: Resolve a content flag (admin)
+      parameters:
+        - name: flagID
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [approved, removed]
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Flag resolved

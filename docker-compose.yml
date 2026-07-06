@@ -1,0 +1,47 @@
+# Local infrastructure for StudyApp (MinIO object storage).
+# Requires Docker Desktop: https://www.docker.com/products/docker-desktop/
+#
+#   docker compose up -d minio
+#   docker compose up -d          # all services
+#
+# MinIO API:     http://localhost:9000
+# MinIO Console: http://localhost:9001  (minioadmin / minioadmin123)
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: studyapp-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - studyapp_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: studyapp-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin123 &&
+      mc mb --ignore-existing local/studyapp-temp &&
+      mc ilm rule add --expire-days 1 --prefix temp/ local/studyapp-temp || true &&
+      echo 'MinIO bucket studyapp-temp ready (temp/ expires after 24h)'
+      "
+
+volumes:
+  studyapp_minio_data:
