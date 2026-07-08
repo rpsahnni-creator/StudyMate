@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/smtp"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,10 @@ type EmailConfig struct {
 	ResendAPIKey string
 	From         string
 	AWSRegion    string
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
 }
 
 // EmailClient sends transactional email.
@@ -161,6 +166,63 @@ func (c *SESClient) SendTransactional(ctx context.Context, req EmailRequest) err
 	return err
 }
 
+// SMTPClient sends email through a standard SMTP server (e.g. Gmail).
+type SMTPClient struct {
+	host     string
+	port     string
+	username string
+	password string
+	from     string
+}
+
+func NewSMTPClient(host, port, username, password, from string) *SMTPClient {
+	return &SMTPClient{
+		host:     host,
+		port:     port,
+		username: username,
+		password: password,
+		from:     from,
+	}
+}
+
+func (c *SMTPClient) SendTransactional(ctx context.Context, req EmailRequest) error {
+	from := c.from
+	if from == "" {
+		from = c.username
+	}
+
+	var msg bytes.Buffer
+	fmt.Fprintf(&msg, "From: %s\r\n", from)
+	fmt.Fprintf(&msg, "To: %s\r\n", req.To)
+	fmt.Fprintf(&msg, "Subject: %s\r\n", req.Subject)
+	msg.WriteString("MIME-Version: 1.0\r\n")
+	msg.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
+	msg.WriteString("\r\n")
+	if req.HTML != "" {
+		msg.WriteString(req.HTML)
+	} else {
+		msg.WriteString(req.Text)
+	}
+
+	addr := c.host + ":" + c.port
+	auth := smtp.PlainAuth("", c.username, c.password, c.host)
+
+	fromAddr := extractEmailAddress(from)
+	if err := smtp.SendMail(addr, auth, fromAddr, []string{req.To}, msg.Bytes()); err != nil {
+		return fmt.Errorf("smtp send: %w", err)
+	}
+	return nil
+}
+
+func extractEmailAddress(from string) string {
+	if start := strings.Index(from, "<"); start >= 0 {
+		if end := strings.Index(from, ">"); end > start {
+			return from[start+1 : end]
+		}
+	}
+	return strings.TrimSpace(from)
+}
+
 // NewEmailClient selects the provider from config.
 func NewEmailClient(ctx context.Context, cfg EmailConfig, logger *slog.Logger) (EmailClient, error) {
 	from := cfg.From
@@ -180,6 +242,11 @@ func NewEmailClient(ctx context.Context, cfg EmailConfig, logger *slog.Logger) (
 			region = "ap-south-1"
 		}
 		return NewSESClient(ctx, region, from)
+	case "smtp":
+		if cfg.SMTPHost == "" || cfg.SMTPUsername == "" || cfg.SMTPPassword == "" {
+			return nil, fmt.Errorf("SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD are required when EMAIL_PROVIDER=smtp")
+		}
+		return NewSMTPClient(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, from), nil
 	default:
 		return &StubClient{logger: logger}, nil
 	}

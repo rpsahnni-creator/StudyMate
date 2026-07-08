@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type UploadStatus = 'queued' | 'uploading' | 'processing' | 'ready' | 'failed';
+export type UploadStatus = 'queued' | 'uploading' | 'processing' | 'review' | 'ready' | 'failed';
 
 export interface QueuedUpload {
   id: string;

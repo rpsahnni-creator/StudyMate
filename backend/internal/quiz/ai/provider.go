@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -201,11 +202,13 @@ func NewGenerator(cfg AIConfig) (Generator, error) {
 }
 
 // rawQuestion is the strict JSON shape returned by real providers.
+// CorrectIndex is a pointer so extraction can distinguish "answer not on page"
+// (nil or -1) from "answer is option 0".
 type rawQuestion struct {
 	Text         string      `json:"text"`
 	Type         string      `json:"type"`
 	Options      []rawOption `json:"options"`
-	CorrectIndex int         `json:"correct_index"`
+	CorrectIndex *int        `json:"correct_index"`
 	Explanation  string      `json:"explanation"`
 	Difficulty   string      `json:"difficulty"`
 	Topic        string      `json:"topic"`
@@ -214,6 +217,20 @@ type rawQuestion struct {
 type rawProviderPayload struct {
 	ChapterSummary string        `json:"chapter_summary"`
 	Questions      []rawQuestion `json:"questions"`
+	Unreadable     bool          `json:"unreadable"`
+}
+
+// ErrPageUnreadable indicates the model could not read the scanned page and the
+// student should be asked to scan again instead of receiving invented questions.
+var ErrPageUnreadable = errors.New("page unreadable — please scan the chapter again in better lighting")
+
+// visionResponseUnreadable reports whether the model flagged the page as unreadable.
+func visionResponseUnreadable(content string) bool {
+	var payload rawProviderPayload
+	if err := json.Unmarshal([]byte(extractJSONPayload(content)), &payload); err != nil {
+		return false
+	}
+	return payload.Unreadable && len(payload.Questions) == 0
 }
 
 type rawOption struct {
@@ -222,12 +239,14 @@ type rawOption struct {
 }
 
 // parseProviderResponse extracts questions (and optional summary) from provider JSON.
-func parseProviderResponse(content string, wantCount int) ([]GeneratedQuestion, string, error) {
+// When allowUnknownAnswer is true (question-scan extraction), a missing or -1
+// correct_index is preserved as CorrectIndexUnknown instead of failing validation.
+func parseProviderResponse(content string, wantCount int, allowUnknownAnswer bool) ([]GeneratedQuestion, string, error) {
 	trimmed := extractJSONPayload(content)
 
 	var payload rawProviderPayload
 	if err := json.Unmarshal([]byte(trimmed), &payload); err == nil && len(payload.Questions) > 0 {
-		questions, err := parseAndValidate(payload.Questions, wantCount)
+		questions, err := parseAndValidate(payload.Questions, wantCount, allowUnknownAnswer)
 		return questions, payload.ChapterSummary, err
 	}
 
@@ -235,21 +254,21 @@ func parseProviderResponse(content string, wantCount int) ([]GeneratedQuestion, 
 	if err := json.Unmarshal([]byte(extractJSONArray(trimmed)), &arr); err != nil {
 		return nil, "", fmt.Errorf("invalid JSON from provider: %w", err)
 	}
-	questions, err := parseAndValidate(arr, wantCount)
+	questions, err := parseAndValidate(arr, wantCount, allowUnknownAnswer)
 	return questions, "", err
 }
 
 // parseAndValidate converts raw JSON questions to domain questions with checks.
 // When wantCount is 0 (flexible vision mode), invalid individual questions are
 // skipped instead of failing the entire batch.
-func parseAndValidate(questions []rawQuestion, wantCount int) ([]GeneratedQuestion, error) {
+func parseAndValidate(questions []rawQuestion, wantCount int, allowUnknownAnswer bool) ([]GeneratedQuestion, error) {
 	flexible := wantCount == 0
 	if wantCount > 0 && len(questions) != wantCount {
 		return nil, fmt.Errorf("expected %d questions, got %d", wantCount, len(questions))
 	}
 	out := make([]GeneratedQuestion, 0, len(questions))
 	for i, q := range questions {
-		validated, err := validateRawQuestion(q, i)
+		validated, err := validateRawQuestion(q, i, allowUnknownAnswer)
 		if err != nil {
 			if flexible {
 				continue
@@ -264,7 +283,7 @@ func parseAndValidate(questions []rawQuestion, wantCount int) ([]GeneratedQuesti
 	return out, nil
 }
 
-func validateRawQuestion(q rawQuestion, index int) (GeneratedQuestion, error) {
+func validateRawQuestion(q rawQuestion, index int, allowUnknownAnswer bool) (GeneratedQuestion, error) {
 	if strings.TrimSpace(q.Text) == "" {
 		return GeneratedQuestion{}, fmt.Errorf("question %d has empty text", index)
 	}
@@ -286,9 +305,20 @@ func validateRawQuestion(q rawQuestion, index int) (GeneratedQuestion, error) {
 	if len(q.Options) < minOpts || len(q.Options) > maxOpts {
 		return GeneratedQuestion{}, fmt.Errorf("question %d type %s must have %d-%d options, got %d", index, qType, minOpts, maxOpts, len(q.Options))
 	}
-	if q.CorrectIndex < 0 || q.CorrectIndex >= len(q.Options) {
-		return GeneratedQuestion{}, fmt.Errorf("question %d correct_index %d out of range", index, q.CorrectIndex)
+
+	correctIndex := CorrectIndexUnknown
+	if q.CorrectIndex != nil {
+		correctIndex = *q.CorrectIndex
 	}
+	if correctIndex < 0 || correctIndex >= len(q.Options) {
+		if allowUnknownAnswer {
+			// Extraction without a printed answer key — reviewer fills it in later.
+			correctIndex = CorrectIndexUnknown
+		} else {
+			return GeneratedQuestion{}, fmt.Errorf("question %d correct_index %d out of range", index, correctIndex)
+		}
+	}
+
 	options := make([]GeneratedOption, 0, len(q.Options))
 	for _, o := range q.Options {
 		options = append(options, GeneratedOption{Label: o.Label, Text: o.Text})
@@ -297,7 +327,7 @@ func validateRawQuestion(q rawQuestion, index int) (GeneratedQuestion, error) {
 		Text:         q.Text,
 		Type:         qType,
 		Options:      options,
-		CorrectIndex: q.CorrectIndex,
+		CorrectIndex: correctIndex,
 		Explanation:  q.Explanation,
 		Difficulty:   q.Difficulty,
 		Topic:        q.Topic,

@@ -33,6 +33,10 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Post("/{quizID}/attempts", h.CreateAttempt)
 		r.Put("/{quizID}/attempts/{attemptID}/submit", h.SubmitAttempt)
 		r.Get("/{quizID}/attempts/{attemptID}/review", h.GetReview)
+		// Question-scan draft review / publish (owner only).
+		r.Get("/{quizID}/draft", h.GetDraft)
+		r.Put("/{quizID}/draft", h.SaveDraft)
+		r.Post("/{quizID}/publish", h.PublishDraft)
 	})
 	r.Get("/users/me/reports", h.GetReports)
 	r.Get("/users/me/analytics", h.GetAnalytics)
@@ -144,6 +148,68 @@ func (h *Handler) GetReview(w http.ResponseWriter, r *http.Request) {
 	h.json(w, http.StatusOK, review)
 }
 
+func (h *Handler) GetDraft(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		apierrors.WriteUnauthorized(w)
+		return
+	}
+	quizID, err := pathInt(r, "quizID")
+	if err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "invalid quiz id", nil)
+		return
+	}
+	draft, err := h.svc.GetDraft(r.Context(), quizID, userID)
+	if err != nil {
+		h.handleServiceError(w, r, err)
+		return
+	}
+	h.json(w, http.StatusOK, draft)
+}
+
+func (h *Handler) SaveDraft(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		apierrors.WriteUnauthorized(w)
+		return
+	}
+	quizID, err := pathInt(r, "quizID")
+	if err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "invalid quiz id", nil)
+		return
+	}
+	var req SaveDraftRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "invalid JSON body", nil)
+		return
+	}
+	draft, err := h.svc.SaveDraft(r.Context(), quizID, userID, req)
+	if err != nil {
+		h.handleServiceError(w, r, err)
+		return
+	}
+	h.json(w, http.StatusOK, draft)
+}
+
+func (h *Handler) PublishDraft(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		apierrors.WriteUnauthorized(w)
+		return
+	}
+	quizID, err := pathInt(r, "quizID")
+	if err != nil {
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, "invalid quiz id", nil)
+		return
+	}
+	result, err := h.svc.PublishDraft(r.Context(), quizID, userID)
+	if err != nil {
+		h.handleServiceError(w, r, err)
+		return
+	}
+	h.json(w, http.StatusOK, result)
+}
+
 func (h *Handler) GetReports(w http.ResponseWriter, r *http.Request) {
 	userID, ok := userIDFromContext(r)
 	if !ok {
@@ -199,6 +265,14 @@ func (h *Handler) handleServiceError(w http.ResponseWriter, r *http.Request, err
 	case errors.Is(err, ErrAttemptForbidden):
 		apierrors.WriteForbidden(w, err.Error())
 	case errors.Is(err, ErrAttemptNotDone):
+		apierrors.WriteError(w, http.StatusConflict, apierrors.ErrCodeConflict, err.Error(), nil)
+	case errors.Is(err, ErrQuizForbidden):
+		apierrors.WriteForbidden(w, err.Error())
+	case errors.Is(err, ErrQuizNotDraft):
+		apierrors.WriteError(w, http.StatusConflict, apierrors.ErrCodeConflict, err.Error(), nil)
+	case errors.Is(err, ErrDraftInvalid):
+		apierrors.WriteError(w, http.StatusBadRequest, apierrors.ErrCodeValidation, err.Error(), nil)
+	case errors.Is(err, ErrAnswersIncomplete):
 		apierrors.WriteError(w, http.StatusConflict, apierrors.ErrCodeConflict, err.Error(), nil)
 	default:
 		apierrors.WriteInternal(w, h.logger, err, traceID)

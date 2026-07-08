@@ -33,6 +33,8 @@ export function formatNetworkError(error: unknown): string {
     normalized.includes("connection refused") ||
     normalized.includes("unable to resolve host") ||
     normalized.includes("aborted") ||
+    normalized.includes("cancel") ||
+    normalized.includes("fetch failed") ||
     normalized.includes("timeout")
   ) {
     return (
@@ -55,6 +57,8 @@ export function isRetryableNetworkError(error: unknown): boolean {
     msg.includes("network") ||
     msg.includes("timeout") ||
     msg.includes("aborted") ||
+    msg.includes("cancel") ||
+    msg.includes("fetch failed") ||
     msg.includes("socket") ||
     msg.includes("econnrefused")
   );

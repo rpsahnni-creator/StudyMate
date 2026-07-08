@@ -20,7 +20,6 @@ import { colors, radius, shadow, spacing } from "../../lib/theme";
 import { useImagePicker, type ImageResult } from "../../hooks/useImagePicker";
 import { uploadMultiplePages, MAX_PAGES_PER_SCAN } from "../../lib/resumableUpload";
 import { assertServerReachable } from "../../lib/network";
-import { API_URL } from "../../lib/config";
 import {
   enqueueUpload,
   getQueuedUploads,
@@ -31,7 +30,7 @@ import {
   sortQueueNewestFirst,
   type QueuedUpload,
 } from "../../lib/uploadQueue";
-import { pollScanJobStatus, jobStageLabel, isJobReady, setScanJobStrategy, type ScanUploadStatus } from "../../lib/scan";
+import { pollScanJobStatus, jobStageLabel, isJobReady, isJobNeedsReview, setScanJobStrategy, type ScanUploadStatus } from "../../lib/scan";
 import { getMySubscription, planDisplayName, scansLabel, type Entitlements } from "../../lib/billing";
 import { SkyBackground } from "../../components/SkyBackground";
 import { skyScreen } from "../../lib/skyScreen";
@@ -95,7 +94,7 @@ function CaptureButton({
 export default function ScanScreen() {
   const { pickFromCamera, pickFromGallery } = useImagePicker();
   const [mode, setMode] = useState("chapter");
-  const [board, setBoard] = useState("cbse");
+  const [board, setBoard] = useState<string>(BOARD_OPTIONS[0].id);
   const [chapterTitle, setChapterTitle] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [queue, setQueue] = useState<QueuedUpload[]>([]);
@@ -215,7 +214,32 @@ export default function ScanScreen() {
     poll.promise
       .then(async (finalStatus) => {
         activePolls.current.delete(queueId);
-        if (isJobReady(finalStatus.status)) {
+        if (isJobNeedsReview(finalStatus)) {
+          await updateUpload(queueId, { status: "review", quizId: finalStatus.quiz_id, progress: 100 });
+          setQueue((prev) =>
+            updateQueueEntry(prev, queueId, {
+              status: "review",
+              quizId: finalStatus.quiz_id,
+              progress: 100,
+            })
+          );
+          setStatus("Questions ready to review!");
+          if (finalStatus.quiz_id) {
+            const reviewQuizId = finalStatus.quiz_id;
+            Alert.alert(
+              "Questions scanned!",
+              "Book ke printed questions nikaal liye. Ab review karein, sahi jawab bharein, aur exam publish karein.",
+              [
+                { text: "Later", style: "cancel" },
+                {
+                  text: "Review now",
+                  onPress: () =>
+                    router.push({ pathname: "/quiz/review-questions", params: { quizId: String(reviewQuizId) } }),
+                },
+              ]
+            );
+          }
+        } else if (isJobReady(finalStatus.status)) {
           await updateUpload(queueId, { status: "ready", quizId: finalStatus.quiz_id, progress: 100 });
           setQueue((prev) =>
             updateQueueEntry(prev, queueId, {
@@ -558,7 +582,7 @@ export default function ScanScreen() {
               Question scan
             </Text>
             <Text style={[styles.modeChipHint, mode === "existing_questions" ? styles.modeChipHintActive : null]}>
-              Printed questions detect
+              Book ke questions → review → publish
             </Text>
           </Pressable>
         </View>
@@ -571,10 +595,6 @@ export default function ScanScreen() {
         />
 
         <Field label="Chapter" value={chapterTitle} onChangeText={setChapterTitle} placeholder="e.g. Interjections" />
-
-        <Text style={styles.stubHint}>
-          Production scan: backend .env me OCR_PROVIDER=gemini_vision + GEMINI_API_KEY set karo. Chapter name likhna helpful hai.
-        </Text>
 
         <Checkbox
           checked={acceptedTerms}
@@ -673,9 +693,6 @@ export default function ScanScreen() {
             <Text style={styles.progressPct}>{uploadProgress}%</Text>
           </View>
         </View>
-        <Text style={styles.serverMeta} numberOfLines={1}>
-          Server: {API_URL}
-        </Text>
       </Card>
 
       {queue.length > 0 ? (
@@ -700,6 +717,16 @@ export default function ScanScreen() {
               ) : null}
               {item.lastError ? <Text style={styles.errorText}>{item.lastError}</Text> : null}
               <View style={styles.itemActions}>
+                {item.status === "review" && item.quizId ? (
+                  <PrimaryButton
+                    title="Review & Publish"
+                    icon="create-outline"
+                    onPress={() =>
+                      router.push({ pathname: "/quiz/review-questions", params: { quizId: String(item.quizId) } })
+                    }
+                    style={styles.flexBtn}
+                  />
+                ) : null}
                 {item.status === "ready" && item.quizId ? (
                   <PrimaryButton
                     title="Start Quiz"
@@ -738,6 +765,7 @@ function StatusPill({ status }: { status: string }) {
     processing: { bg: colors.warningBg, color: colors.warning },
     uploading: { bg: colors.brandSoft, color: colors.brandDark },
     queued: { bg: colors.surfaceAlt, color: colors.textMuted },
+    review: { bg: colors.brandSoft, color: colors.brandDark },
     ready: { bg: colors.successBg, color: colors.success },
   };
   const theme = map[status] ?? { bg: colors.successBg, color: colors.success };
@@ -810,16 +838,6 @@ const styles = StyleSheet.create({
   modeChipTextActive: { color: colors.white },
   modeChipHint: { fontSize: 11, fontWeight: "600", color: colors.textMuted, lineHeight: 15 },
   modeChipHintActive: { color: "rgba(255,255,255,0.85)" },
-  stubHint: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
-    backgroundColor: colors.surfaceAlt,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
   row: { flexDirection: "row", gap: spacing.md },
   half: { flex: 1 },
   flexBtn: { flex: 1 },
@@ -933,7 +951,6 @@ const styles = StyleSheet.create({
   emptyPreviewText: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
   emptyPreviewHint: { fontSize: 12.5, color: colors.textSubtle, textAlign: "center", paddingHorizontal: spacing.xl },
   meta: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
-  serverMeta: { color: colors.textSubtle, fontSize: 11, marginTop: spacing.xs },
   progressSection: { gap: 8 },
   progressTrack: {
     height: 8,

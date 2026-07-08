@@ -7,12 +7,16 @@ type Config struct {
 	FirebaseCredentialsPath string
 	FirebaseCredentialsJSON string // base64-encoded service account JSON
 	FirebaseProjectID       string
-	EmailProvider           string // stub | resend | ses
+	EmailProvider           string // stub | resend | ses | smtp
 	ResendAPIKey            string
 	EmailFrom               string
 	AWSRegion               string
 	ResendWebhookSecret     string
 	Environment             string
+	SMTPHost                string
+	SMTPPort                string
+	SMTPUsername            string
+	SMTPPassword            string
 }
 
 // LoadConfig reads notification settings from the environment.
@@ -29,6 +33,10 @@ func LoadConfig() Config {
 	if region == "" {
 		region = "ap-south-1"
 	}
+	smtpPort := os.Getenv("SMTP_PORT")
+	if smtpPort == "" {
+		smtpPort = "587"
+	}
 	return Config{
 		FirebaseCredentialsPath: os.Getenv("FIREBASE_CREDENTIALS_PATH"),
 		FirebaseCredentialsJSON: os.Getenv("FIREBASE_CREDENTIALS_JSON"),
@@ -39,6 +47,10 @@ func LoadConfig() Config {
 		AWSRegion:               region,
 		ResendWebhookSecret:     os.Getenv("RESEND_WEBHOOK_SECRET"),
 		Environment:             os.Getenv("ENVIRONMENT"),
+		SMTPHost:                os.Getenv("SMTP_HOST"),
+		SMTPPort:                smtpPort,
+		SMTPUsername:            os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:            os.Getenv("SMTP_PASSWORD"),
 	}
 }
 
@@ -52,5 +64,9 @@ func (c Config) EmailConfig() EmailConfig {
 		ResendAPIKey: c.ResendAPIKey,
 		From:         c.EmailFrom,
 		AWSRegion:    c.AWSRegion,
+		SMTPHost:     c.SMTPHost,
+		SMTPPort:     c.SMTPPort,
+		SMTPUsername: c.SMTPUsername,
+		SMTPPassword: c.SMTPPassword,
 	}
 }

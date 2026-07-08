@@ -99,7 +99,7 @@ export default function ProfileScreen() {
   return (
     <SkyBackground>
       <ScrollView style={styles.screen} contentContainerStyle={skyScreen.content}>
-        <Text style={skyScreen.title}>My Profile</Text>
+        <Text style={styles.pageTitle}>My Profile</Text>
 
         <Card glass style={styles.identityCard}>
           <View style={styles.avatarBlock}>
@@ -121,7 +121,6 @@ export default function ProfileScreen() {
             {displayName}{" "}
             <Text style={styles.planTag}>({planDisplayName(entitlements?.plan ?? "free")})</Text>
           </Text>
-          {me?.email ? <Text style={styles.email}>{me.email}</Text> : null}
         </Card>
 
         <Card glass style={styles.section}>
@@ -166,8 +165,10 @@ export default function ProfileScreen() {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+      <Text style={styles.detailLine}>
+        <Text style={styles.detailLabel}>{label}: </Text>
+        <Text style={styles.detailValue}>{value}</Text>
+      </Text>
     </View>
   );
 }
@@ -175,6 +176,16 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   muted: { color: colors.textMuted, fontSize: 14 },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#FFD400",
+    letterSpacing: -0.4,
+    textAlign: "center",
+    textShadowColor: "rgba(15, 23, 42, 0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
   identityCard: {
     alignItems: "center",
     gap: spacing.md,
@@ -230,11 +241,6 @@ const styles = StyleSheet.create({
     color: colors.brandDark,
     fontWeight: "700",
   },
-  email: {
-    color: colors.textMuted,
-    fontSize: 15,
-    textAlign: "center",
-  },
   section: {
     gap: spacing.sm,
   },
@@ -245,24 +251,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: spacing.md,
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  detailLine: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
   detailLabel: {
     color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: "600",
-    flex: 1,
+    fontWeight: "700",
   },
   detailValue: {
     color: colors.text,
-    fontSize: 14,
     fontWeight: "700",
-    flex: 1.2,
-    textAlign: "right",
   },
 });

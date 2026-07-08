@@ -39,8 +39,8 @@ type AuthService struct {
 	jwtSecret         string
 	tokenTTL          time.Duration
 	refreshTTL        time.Duration
-	resetMailer       ResetEmailSender
-	registrationMailer RegistrationEmailSender
+	resetMailer            ResetEmailSender
+	registrationNotifier   RegistrationNotifier
 	otpTTL            time.Duration
 	verificationTTL   time.Duration
 }
@@ -66,9 +66,9 @@ func (s *AuthService) WithPasswordResetMailer(mailer ResetEmailSender) *AuthServ
 	return s
 }
 
-// WithRegistrationMailer configures signup OTP and welcome email delivery.
-func (s *AuthService) WithRegistrationMailer(mailer RegistrationEmailSender) *AuthService {
-	s.registrationMailer = mailer
+// WithRegistrationNotifier configures async signup OTP and welcome email delivery.
+func (s *AuthService) WithRegistrationNotifier(notifier RegistrationNotifier) *AuthService {
+	s.registrationNotifier = notifier
 	return s
 }
 
@@ -81,7 +81,7 @@ func (s *AuthService) SendRegistrationOTP(ctx context.Context, email string) (*S
 	if existing, err := s.repo.GetUserByEmail(ctx, normalized); err == nil && existing != nil {
 		return nil, errors.New("email already registered")
 	}
-	if s.registrationMailer == nil {
+	if s.registrationNotifier == nil {
 		return nil, fmt.Errorf("registration email is not configured")
 	}
 
@@ -103,11 +103,12 @@ func (s *AuthService) SendRegistrationOTP(ctx context.Context, email string) (*S
 	}); err != nil {
 		return nil, fmt.Errorf("failed to store otp: %w", err)
 	}
-	if err := s.registrationMailer.SendRegistrationOTP(ctx, normalized, otp); err != nil {
-		if msg := UserFacingOTPDeliveryError(err); msg != err.Error() {
-			return nil, errors.New(msg)
-		}
-		return nil, fmt.Errorf("failed to send otp email: %w", err)
+	expiryMinutes := int(s.otpTTL.Minutes())
+	if expiryMinutes <= 0 {
+		expiryMinutes = 10
+	}
+	if err := s.registrationNotifier.EnqueueRegistrationOTP(ctx, normalized, otp, expiryMinutes); err != nil {
+		return nil, fmt.Errorf("failed to queue otp email: %w", err)
 	}
 
 	resp := &SendRegistrationOTPResponse{
@@ -121,7 +122,7 @@ func (s *AuthService) SendRegistrationOTP(ctx context.Context, email string) (*S
 
 func isRealEmailProvider() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))) {
-	case "resend", "ses":
+	case "resend", "ses", "smtp":
 		return true
 	default:
 		return false
@@ -253,10 +254,8 @@ func (s *AuthService) Register(ctx context.Context, req *RegisterRequest) (*Toke
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
 
-	if s.registrationMailer != nil {
-		if err := s.registrationMailer.SendRegistrationWelcome(ctx, user, classLevel); err != nil {
-			return nil, fmt.Errorf("account created but failed to send confirmation email: %w", err)
-		}
+	if s.registrationNotifier != nil {
+		_ = s.registrationNotifier.EnqueueRegistrationWelcome(ctx, user.ID, user.Name, user.Email, classLevel)
 	}
 
 	// Generate tokens

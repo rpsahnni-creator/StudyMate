@@ -123,6 +123,76 @@ export function getMyReports(page = 1, limit = 10): Promise<ReportsPage> {
   return request<ReportsPage>(`/users/me/reports?page=${page}&limit=${limit}`);
 }
 
+// --- Question-scan draft review / publish ---
+
+export interface DraftOption {
+  id: number;
+  label: string;
+  text: string;
+  isCorrect: boolean;
+}
+
+export interface DraftQuestion {
+  id: number;
+  text: string;
+  type: string; // mcq | fill_blank | true_false
+  answerStatus: "set" | "unknown";
+  explanation: string;
+  options: DraftOption[];
+}
+
+export interface DraftDetail {
+  id: number;
+  title: string;
+  status: "draft" | "published";
+  totalQuestions: number;
+  needsAnswerCount: number;
+  questions: DraftQuestion[];
+}
+
+export interface DraftOptionInput {
+  label: string;
+  text: string;
+}
+
+export interface DraftQuestionInput {
+  text: string;
+  type: string;
+  correctIndex: number; // -1 = answer not chosen yet
+  explanation: string;
+  options: DraftOptionInput[];
+}
+
+export interface SaveDraftRequest {
+  questions: DraftQuestionInput[];
+}
+
+export interface PublishResult {
+  quizId: number;
+  status: string;
+  totalQuestions: number;
+}
+
+export function getDraft(quizId: string): Promise<DraftDetail> {
+  return request<DraftDetail>(`/quizzes/${quizId}/draft`);
+}
+
+export function saveDraft(quizId: string, body: SaveDraftRequest): Promise<DraftDetail> {
+  return request<DraftDetail>(`/quizzes/${quizId}/draft`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function publishDraft(quizId: string): Promise<PublishResult> {
+  return request<PublishResult>(`/quizzes/${quizId}/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+}
+
 // --- Analytics types (mirror backend/internal/quiz analytics DTOs) ---
 
 export interface AnalyticsSummary {

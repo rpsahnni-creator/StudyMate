@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+func intPtr(v int) *int { return &v }
+
 func TestStubGeneratorReturnsChapterMix(t *testing.T) {
 	g := NewStubGenerator()
 	res, err := g.Generate(context.Background(), GenerateRequest{Text: "photosynthesis basics", ScanMode: ScanModeChapter})
@@ -47,7 +49,7 @@ func TestParseAndValidateRejectsWrongCount(t *testing.T) {
 		Type:    QuestionTypeMCQ,
 		Options: []rawOption{{Label: "A"}, {Label: "B"}, {Label: "C"}, {Label: "D"}},
 	}}
-	if _, err := parseAndValidate(raw, 10); err == nil {
+	if _, err := parseAndValidate(raw, 10, false); err == nil {
 		t.Fatal("expected error for wrong question count")
 	}
 }
@@ -57,9 +59,9 @@ func TestParseAndValidateAcceptsTrueFalse(t *testing.T) {
 		Text:         "Gravity pulls objects down.",
 		Type:         QuestionTypeTrueFalse,
 		Options:      []rawOption{{Label: "A", Text: "True"}, {Label: "B", Text: "False"}},
-		CorrectIndex: 0,
+		CorrectIndex: intPtr(0),
 	}}
-	got, err := parseAndValidate(raw, 1)
+	got, err := parseAndValidate(raw, 1, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +76,7 @@ func TestParseAndValidateRejectsBadMCQOptions(t *testing.T) {
 		Type:    QuestionTypeMCQ,
 		Options: []rawOption{{Label: "A"}, {Label: "B"}},
 	}}
-	if _, err := parseAndValidate(raw, 1); err == nil {
+	if _, err := parseAndValidate(raw, 1, false); err == nil {
 		t.Fatal("expected error for wrong option count")
 	}
 }
@@ -85,16 +87,16 @@ func TestParseAndValidateFlexibleSkipsInvalidFillBlank(t *testing.T) {
 			Text:         "Plants make food using _____.",
 			Type:         QuestionTypeFillBlank,
 			Options:      nil,
-			CorrectIndex: 0,
+			CorrectIndex: intPtr(0),
 		},
 		{
 			Text:         "Which gas do plants release?",
 			Type:         QuestionTypeMCQ,
 			Options:      []rawOption{{Label: "A", Text: "Oxygen"}, {Label: "B", Text: "Nitrogen"}, {Label: "C", Text: "Carbon dioxide"}, {Label: "D", Text: "Hydrogen"}},
-			CorrectIndex: 0,
+			CorrectIndex: intPtr(0),
 		},
 	}
-	got, err := parseAndValidate(raw, 0)
+	got, err := parseAndValidate(raw, 0, false)
 	if err != nil {
 		t.Fatalf("flexible mode should keep valid questions: %v", err)
 	}
@@ -112,7 +114,7 @@ func TestParseAndValidateFlexibleFailsWhenAllInvalid(t *testing.T) {
 		Type:    QuestionTypeFillBlank,
 		Options: nil,
 	}}
-	if _, err := parseAndValidate(raw, 0); err == nil {
+	if _, err := parseAndValidate(raw, 0, false); err == nil {
 		t.Fatal("expected error when every question is invalid")
 	}
 }

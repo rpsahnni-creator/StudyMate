@@ -123,6 +123,63 @@ type ReviewQuestion struct {
 	Explanation        string `json:"explanation"`
 }
 
+// --- Question-scan draft review / publish ---
+
+// DraftDetail is the editable payload for a scanned (question-scan) exam that has
+// not been published yet. Only the owner (the scanner) can see it, and it DOES
+// expose correct answers so they can be reviewed and corrected.
+type DraftDetail struct {
+	ID               int64           `json:"id"`
+	Title            string          `json:"title"`
+	Status           string          `json:"status"`
+	TotalQuestions   int             `json:"totalQuestions"`
+	NeedsAnswerCount int             `json:"needsAnswerCount"`
+	Questions        []DraftQuestion `json:"questions"`
+}
+
+type DraftQuestion struct {
+	ID           int64         `json:"id"`
+	Text         string        `json:"text"`
+	Type         string        `json:"type"`         // mcq | fill_blank | true_false
+	AnswerStatus string        `json:"answerStatus"` // set | unknown
+	Explanation  string        `json:"explanation"`
+	Options      []DraftOption `json:"options"`
+}
+
+type DraftOption struct {
+	ID        int64  `json:"id"`
+	Label     string `json:"label"`
+	Text      string `json:"text"`
+	IsCorrect bool   `json:"isCorrect"`
+}
+
+// SaveDraftRequest replaces the full question list of a draft exam.
+type SaveDraftRequest struct {
+	Questions []DraftQuestionInput `json:"questions"`
+}
+
+type DraftQuestionInput struct {
+	Text string             `json:"text"`
+	Type string             `json:"type"`
+	// CorrectIndex is the 0-based index of the correct option, or -1 if the
+	// reviewer has not chosen an answer yet.
+	CorrectIndex int               `json:"correctIndex"`
+	Explanation  string            `json:"explanation"`
+	Options      []DraftOptionInput `json:"options"`
+}
+
+type DraftOptionInput struct {
+	Label string `json:"label"`
+	Text  string `json:"text"`
+}
+
+// PublishResult is returned after a draft exam is published for students.
+type PublishResult struct {
+	QuizID         int64  `json:"quizId"`
+	Status         string `json:"status"`
+	TotalQuestions int    `json:"totalQuestions"`
+}
+
 // ReportsPage is a paginated list of the user's completed attempts.
 type ReportsPage struct {
 	Reports []ReportItem `json:"reports"`

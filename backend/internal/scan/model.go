@@ -14,6 +14,7 @@ const (
 	ScanJobProcessing     ScanJobStatus = "processing"
 	ScanJobOCRComplete    ScanJobStatus = "ocr_complete"
 	ScanJobNeedsStrategy  ScanJobStatus = "needs_strategy"
+	ScanJobReviewReady    ScanJobStatus = "review_ready" // question-scan: quiz drafted, awaiting review + publish
 	ScanJobQuizReady      ScanJobStatus = "quiz_ready"
 	ScanJobCompleted      ScanJobStatus = "completed" // legacy alias for quiz_ready in API responses
 	ScanJobFailed         ScanJobStatus = "failed"
@@ -94,6 +95,7 @@ type UploadStatusResponse struct {
 	QuizID           *int64 `json:"quiz_id,omitempty"`
 	DetectedPageType string `json:"detected_page_type,omitempty"`
 	NeedsStrategy    bool   `json:"needs_strategy,omitempty"`
+	NeedsReview      bool   `json:"needs_review,omitempty"`
 	ChapterSummary   string `json:"chapter_summary,omitempty"`
 }
 

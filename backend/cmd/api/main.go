@@ -108,11 +108,13 @@ func main() {
 		log.Fatalf("failed to init email client: %v", emailErr)
 	}
 
+	notifWorker := notifications.NewNotificationWorker(pool, cache, fcmClient, emailClient, notificationsRepo, logger)
+
 	// --- Auth module wiring ---
 	authRepo := auth.NewPostgresRepository(pool)
 	authService := auth.NewAuthService(authRepo, cfg.JWTSecret).
 		WithPasswordResetMailer(auth.NewPasswordResetMailer(emailClient, cfg.FrontendURL)).
-		WithRegistrationMailer(auth.NewRegistrationMailer(emailClient))
+		WithRegistrationNotifier(notifications.NewRegistrationNotifier(notifWorker))
 	authHandler := auth.NewHandler(authService, pool)
 
 	// --- Feature flags module wiring ---
@@ -161,7 +163,6 @@ func main() {
 		notifications.WithDevelopmentMode(notifCfg.IsDevelopment()),
 	)
 
-	notifWorker := notifications.NewNotificationWorker(pool, cache, fcmClient, emailClient, notificationsRepo, logger)
 	billingService.SetPaymentNotifier(notifications.NewBillingNotifier(notifWorker))
 	scanNotifier := notifications.NewScanNotifier(notifWorker, pool)
 
@@ -187,7 +188,7 @@ func main() {
 	)
 
 	// --- Quiz module wiring ---
-	quizService := quiz.NewService(pool, logger).WithCache(cache)
+	quizService := quiz.NewService(pool, logger).WithCache(cache).WithExplainer(ai.NewExplainer(aiCfg))
 	quizHandler := quiz.NewHandler(quizService, logger)
 	go func() {
 		if err := scanWorker.Run(ctx); err != nil && ctx.Err() == nil {

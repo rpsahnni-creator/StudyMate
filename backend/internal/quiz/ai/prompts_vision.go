@@ -20,30 +20,32 @@ func buildVisionUserPrompt(req GenerateRequest) string {
 	minQ := VisionMinQuestionsDefault()
 
 	if mode == ScanModeExistingQuestions {
-		return fmt.Sprintf(`Extract printed questions from the attached textbook page image(s).
+		return fmt.Sprintf(`Extract the questions that are already printed on the attached page image(s). Do NOT create new questions.
 
 Chapter/topic hint: %s
 Board: %s
 
 RULES:
-- Extract ONLY questions that are already printed on the page — do NOT invent new ones.
-- Return as many as you find (minimum %d, maximum %d). Fewer is OK if the page has fewer questions.
-- Preserve types: mcq, fill_blank, true_false.
-- mcq: exactly 4 options (A-D).
-- fill_blank: question text MUST contain "_____" and MUST have 2-4 word/phrase options (never an empty options array).
-- true_false: exactly 2 options ("True", "False").
-- Options and correct answers must match the page / answer key if visible.
+- Extract ONLY the exact questions printed on the page — never invent, rephrase into a new topic, or add extra questions.
+- Return as many as are printed (minimum %d, maximum %d). Fewer is fine if the page has fewer.
+- Detect and preserve each question's real type:
+  - mcq: the question already lists choices. Give exactly 4 options (A-D) using the printed choices; if only 2-3 are printed, keep the printed ones and add plausible ones from the same page so there are 4.
+  - fill_blank: the question has a blank. Put "_____" where the blank is and provide 2-4 short word/phrase options (never an empty options array).
+  - true_false: a statement to judge. Use exactly 2 options: "True", "False".
+- ANSWER KEY: If the page (or an answer key / answers section / bold/ticked/circled/underlined choice) shows the correct answer, set "correct_index" to that option's 0-based position.
+- If the correct answer is NOT printed anywhere on the page, set "correct_index" to -1 (unknown). NEVER guess an answer that is not on the page — a human reviewer will fill it in.
+- Only write "explanation" if the answer is known from the page; otherwise leave it "".
 - %s
 
 Return JSON:
 {
   "questions": [
     {
-      "text": "cleaned question from page",
+      "text": "exact question from the page",
       "type": "mcq|fill_blank|true_false",
       "options": [{"label": "A", "text": "..."}],
       "correct_index": 0,
-      "explanation": "explanation in the page language",
+      "explanation": "explanation in the page language, or empty if answer unknown",
       "difficulty": "medium",
       "topic": "from page"
     }

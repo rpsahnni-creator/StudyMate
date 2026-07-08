@@ -17,4 +17,16 @@ const (
 
 	SourceAIGenerated     = "ai_generated"
 	SourceScannedExisting = "scanned_existing"
+
+	// CorrectIndexUnknown marks an extracted question whose answer was not printed
+	// on the page. The reviewer must fill it in before the exam is published.
+	CorrectIndexUnknown = -1
+
+	// Answer-known state on the questions table.
+	AnswerStatusSet     = "set"
+	AnswerStatusUnknown = "unknown"
+
+	// Quiz publish lifecycle.
+	QuizStatusDraft     = "draft"
+	QuizStatusPublished = "published"
 )

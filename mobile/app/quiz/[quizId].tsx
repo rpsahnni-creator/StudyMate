@@ -19,6 +19,7 @@ import {
 } from "../../lib/api";
 import { getAccessToken } from "../../lib/auth";
 import { colors, radius, shadow } from "../../lib/theme";
+import { SkyBackground } from "../../components/SkyBackground";
 
 function answersKey(attemptId: string): string {
   return `studyapp.quiz.answers.${attemptId}`;
@@ -183,21 +184,25 @@ export default function QuizPlayScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.muted}>Loading quiz…</Text>
-      </View>
+      <SkyBackground>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.muted}>Loading quiz…</Text>
+        </View>
+      </SkyBackground>
     );
   }
 
   if (error && !quiz) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error}</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={() => void loadQuiz()}>
-          <Text style={styles.primaryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SkyBackground>
+        <View style={styles.center}>
+          <Text style={styles.error}>{error}</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => void loadQuiz()}>
+            <Text style={styles.primaryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SkyBackground>
     );
   }
 
@@ -206,19 +211,21 @@ export default function QuizPlayScreen() {
   // Pre-start screen.
   if (!attemptId) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>{quiz.title}</Text>
-        <View style={styles.badgeRow}>
-          <Text style={styles.badge}>{quiz.subject || "General"}</Text>
-          <Text style={styles.badge}>{quiz.board || "—"}</Text>
+      <SkyBackground>
+        <View style={styles.container}>
+          <Text style={styles.title}>{quiz.title}</Text>
+          <View style={styles.badgeRow}>
+            <Text style={styles.badge}>{quiz.subject || "General"}</Text>
+            <Text style={styles.badge}>{quiz.board || "—"}</Text>
+          </View>
+          <Text style={styles.muted}>{quiz.totalQuestions} questions</Text>
+          <Text style={styles.muted}>Time limit: {Math.round(quiz.timeLimit / 60)} min</Text>
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <TouchableOpacity style={styles.primaryButton} onPress={() => void handleStart()} disabled={starting}>
+            <Text style={styles.primaryButtonText}>{starting ? "Starting…" : "Start Quiz"}</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.muted}>{quiz.totalQuestions} questions</Text>
-        <Text style={styles.muted}>Time limit: {Math.round(quiz.timeLimit / 60)} min</Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity style={styles.primaryButton} onPress={() => void handleStart()} disabled={starting}>
-          <Text style={styles.primaryButtonText}>{starting ? "Starting…" : "Start Quiz"}</Text>
-        </TouchableOpacity>
-      </View>
+      </SkyBackground>
     );
   }
 
@@ -228,78 +235,80 @@ export default function QuizPlayScreen() {
   const progress = ((current + 1) / quiz.questions.length) * 100;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.progressText}>
-          Q {current + 1} / {quiz.questions.length}
-        </Text>
-        <Text style={[styles.timer, (timeLeft ?? 0) <= 30 ? styles.timerDanger : null]}>
-          {minutes}:{seconds.toString().padStart(2, "0")}
-        </Text>
+    <SkyBackground>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.progressText}>
+            Q {current + 1} / {quiz.questions.length}
+          </Text>
+          <Text style={[styles.timer, (timeLeft ?? 0) <= 30 ? styles.timerDanger : null]}>
+            {minutes}:{seconds.toString().padStart(2, "0")}
+          </Text>
+        </View>
+
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${progress}%` }]} />
+        </View>
+
+        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+          <Text style={styles.typeBadge}>{questionTypeLabel(question.type)}</Text>
+          <Text style={styles.questionText}>{question.text}</Text>
+
+          {question.options.map((opt, idx) => {
+            const selected = answers[question.id] === opt.id;
+            return (
+              <TouchableOpacity
+                key={opt.id}
+                style={[styles.option, selected ? styles.optionSelected : null]}
+                onPress={() => selectOption(question.id, opt.id)}
+                disabled={submitted}
+              >
+                <Text style={styles.optionLabel}>{opt.label || String.fromCharCode(65 + idx)}</Text>
+                <Text style={styles.optionText}>{opt.text}</Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.footerBtn, styles.footerBtnSecondary, current === 0 ? styles.disabled : null]}
+            onPress={() => setCurrent((c) => Math.max(0, c - 1))}
+            disabled={current === 0 || submitted}
+          >
+            <Text style={styles.footerBtnSecondaryText}>Prev</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.footerBtn,
+              styles.footerBtnSecondary,
+              current >= quiz.questions.length - 1 ? styles.disabled : null,
+            ]}
+            onPress={() => setCurrent((c) => Math.min(quiz.questions.length - 1, c + 1))}
+            disabled={current >= quiz.questions.length - 1 || submitted}
+          >
+            <Text style={styles.footerBtnSecondaryText}>Next</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.footerBtn, styles.footerBtnSubmit, submitting || submitted ? styles.disabled : null]}
+            onPress={confirmSubmit}
+            disabled={submitting || submitted}
+          >
+            <Text style={styles.footerBtnSubmitText}>{submitting ? "…" : "Submit"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${progress}%` }]} />
-      </View>
-
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-        <Text style={styles.typeBadge}>{questionTypeLabel(question.type)}</Text>
-        <Text style={styles.questionText}>{question.text}</Text>
-
-        {question.options.map((opt, idx) => {
-          const selected = answers[question.id] === opt.id;
-          return (
-            <TouchableOpacity
-              key={opt.id}
-              style={[styles.option, selected ? styles.optionSelected : null]}
-              onPress={() => selectOption(question.id, opt.id)}
-              disabled={submitted}
-            >
-              <Text style={styles.optionLabel}>{opt.label || String.fromCharCode(65 + idx)}</Text>
-              <Text style={styles.optionText}>{opt.text}</Text>
-            </TouchableOpacity>
-          );
-        })}
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.footerBtn, styles.footerBtnSecondary, current === 0 ? styles.disabled : null]}
-          onPress={() => setCurrent((c) => Math.max(0, c - 1))}
-          disabled={current === 0 || submitted}
-        >
-          <Text style={styles.footerBtnSecondaryText}>Prev</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.footerBtn,
-            styles.footerBtnSecondary,
-            current >= quiz.questions.length - 1 ? styles.disabled : null,
-          ]}
-          onPress={() => setCurrent((c) => Math.min(quiz.questions.length - 1, c + 1))}
-          disabled={current >= quiz.questions.length - 1 || submitted}
-        >
-          <Text style={styles.footerBtnSecondaryText}>Next</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.footerBtn, styles.footerBtnSubmit, submitting || submitted ? styles.disabled : null]}
-          onPress={confirmSubmit}
-          disabled={submitting || submitted}
-        >
-          <Text style={styles.footerBtnSubmitText}>{submitting ? "…" : "Submit"}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    </SkyBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, gap: 14, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24, backgroundColor: colors.bg },
+  container: { flex: 1, padding: 20, gap: 14, backgroundColor: "transparent" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24, backgroundColor: "transparent" },
   title: { fontSize: 24, fontWeight: "800", color: colors.text },
   badgeRow: { flexDirection: "row", gap: 8 },
   badge: {

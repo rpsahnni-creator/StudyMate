@@ -6,11 +6,11 @@ export interface BoardOption {
 }
 
 export const BOARD_OPTIONS: BoardOption[] = [
-  { id: "ncert", label: "NCERT" },
+  { id: "bihar_board", label: "Bihar Board" },
   { id: "cbse", label: "CBSE" },
   { id: "icse", label: "ICSE" },
   { id: "jharkhand_board", label: "Jharkhand Board" },
-  { id: "bihar_board", label: "Bihar Board" },
+  { id: "ncert", label: "NCERT" },
 ];
 
 export function boardLabel(id: string): string {

@@ -95,7 +95,7 @@ func (g *OpenAIGenerator) Generate(ctx context.Context, req GenerateRequest) (*G
 		}
 		tokensUsed += tokens
 
-		parsed, summary, jsonErr := parseProviderResponse(content, wantCount)
+		parsed, summary, jsonErr := parseProviderResponse(content, wantCount, false)
 		if jsonErr != nil {
 			lastErr = jsonErr
 			messages = append(messages,

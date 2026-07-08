@@ -196,7 +196,7 @@ func (w *Worker) ProcessJob(ctx context.Context, jobID int64) error {
 	if err != nil {
 		return err
 	}
-	if job.Status == ScanJobQuizReady || job.Status == ScanJobFailed || job.Status == ScanJobNeedsStrategy {
+	if job.Status == ScanJobQuizReady || job.Status == ScanJobReviewReady || job.Status == ScanJobFailed || job.Status == ScanJobNeedsStrategy {
 		return nil
 	}
 	if !isPendingStatus(job.Status) && job.Status != ScanJobProcessing {
@@ -277,7 +277,7 @@ func (w *Worker) ProcessJob(ctx context.Context, jobID int64) error {
 	}
 
 	contentHash := ContentCacheHash(combinedText)
-	skipCache := w.gen.ProviderName() == ai.ProviderStub || w.shouldUseVisionPipeline()
+	skipCache := w.gen.ProviderName() == ai.ProviderStub || w.shouldUseVisionPipeline() || effectiveMode == ai.ScanModeExistingQuestions
 
 	if w.cacheService != nil && !skipCache && !resumeFromPipeline {
 		cached, hit, err := w.cacheService.Lookup(ctx, contentHash)
@@ -318,7 +318,7 @@ func (w *Worker) ProcessJob(ctx context.Context, jobID int64) error {
 	if summary != "" {
 		_ = w.repo.UpdateJobChapterSummary(ctx, jobID, summary)
 	}
-	if err := w.repo.UpdateJobStatus(ctx, jobID, ScanJobQuizReady, 100, nil); err != nil {
+	if err := w.repo.UpdateJobStatus(ctx, jobID, finalJobStatus(effectiveMode), 100, nil); err != nil {
 		return err
 	}
 	metrics.RecordScanJob("completed")
@@ -394,45 +394,29 @@ func (w *Worker) persistQuiz(ctx context.Context, job ScanJob, jobID int64, aggr
 		return 0, "", genErr
 	}
 
+	extractMode := effectiveMode == ai.ScanModeExistingQuestions
 	title := fmt.Sprintf("Quiz for job %d", jobID)
-	if effectiveMode == ai.ScanModeExistingQuestions {
-		title = fmt.Sprintf("Extracted quiz for job %d", jobID)
+	quizStatus := ai.QuizStatusPublished
+	if extractMode {
+		title = fmt.Sprintf("Scanned exam for job %d", jobID)
+		quizStatus = ai.QuizStatusDraft
 	}
 
-	quizID, err := w.repo.CreateQuizRecord(ctx, job.ChapterID, aggregateHash, title, len(result.Questions))
+	quizID, err := w.repo.CreateQuizRecordWithStatus(ctx, job.ChapterID, aggregateHash, title, len(result.Questions), quizStatus)
 	if err != nil {
 		return 0, "", err
 	}
 
 	explanationLang := ai.ExplanationDBCode(ai.DetectQuestionsLanguage(result.Questions, contentLang))
 	for i, question := range result.Questions {
-		qType := question.Type
-		if qType == "" {
-			qType = ai.QuestionTypeMCQ
-		}
-		questionID, err := w.repo.CreateQuestion(ctx, job.ChapterID, aggregateHash, question.Text, qType, sourceType, question.Difficulty)
-		if err != nil {
-			return 0, "", err
-		}
-		for idx, option := range question.Options {
-			isCorrect := idx == question.CorrectIndex
-			label := option.Label
-			if label == "" {
-				label = string(rune('A' + idx))
-			}
-			if err := w.repo.CreateQuestionOption(ctx, questionID, label, option.Text, isCorrect); err != nil {
-				return 0, "", err
-			}
-		}
-		if err := w.repo.CreateQuestionExplanation(ctx, questionID, question.Explanation, explanationLang); err != nil {
-			return 0, "", err
-		}
-		if err := w.repo.LinkQuestionToQuiz(ctx, quizID, questionID, i+1); err != nil {
+		if err := w.persistQuestion(ctx, quizID, job.ChapterID, aggregateHash, question, sourceType, explanationLang, i+1, extractMode); err != nil {
 			return 0, "", err
 		}
 	}
 
-	if w.cacheService != nil {
+	// Draft (question-scan) quizzes are per-user and edited before publishing —
+	// they must not be shared via the content cache.
+	if w.cacheService != nil && !extractMode {
 		modelUsed := result.ModelUsed
 		if modelUsed == "" {
 			modelUsed = w.gen.ModelName()
@@ -625,52 +609,41 @@ func (w *Worker) processJobVision(ctx context.Context, job ScanJob, jobID int64,
 	if summary != "" {
 		_ = w.repo.UpdateJobChapterSummary(ctx, jobID, summary)
 	}
-	if err := w.repo.UpdateJobStatus(ctx, jobID, ScanJobQuizReady, 100, nil); err != nil {
+	if err := w.repo.UpdateJobStatus(ctx, jobID, finalJobStatus(effectiveMode), 100, nil); err != nil {
 		return err
 	}
 	metrics.RecordScanJob("completed")
 	return w.notifier.QuizReady(ctx, job.UserID, jobID, quizID)
 }
 
-func (w *Worker) persistVisionQuiz(ctx context.Context, job ScanJob, jobID int64, aggregateHash string, result *ai.GenerateResult, effectiveMode string) (int64, string, error) {
-	sourceType := ai.SourceAIGenerated
+// finalJobStatus is review_ready for question-scan (needs review + publish) and
+// quiz_ready for chapter-scan (immediately playable).
+func finalJobStatus(effectiveMode string) ScanJobStatus {
 	if effectiveMode == ai.ScanModeExistingQuestions {
-		sourceType = ai.SourceScannedExisting
+		return ScanJobReviewReady
 	}
+	return ScanJobQuizReady
+}
+
+func (w *Worker) persistVisionQuiz(ctx context.Context, job ScanJob, jobID int64, aggregateHash string, result *ai.GenerateResult, effectiveMode string) (int64, string, error) {
+	extractMode := effectiveMode == ai.ScanModeExistingQuestions
+	sourceType := ai.SourceAIGenerated
 	title := fmt.Sprintf("Quiz for job %d", jobID)
-	if effectiveMode == ai.ScanModeExistingQuestions {
-		title = fmt.Sprintf("Extracted quiz for job %d", jobID)
+	quizStatus := ai.QuizStatusPublished
+	if extractMode {
+		sourceType = ai.SourceScannedExisting
+		title = fmt.Sprintf("Scanned exam for job %d", jobID)
+		quizStatus = ai.QuizStatusDraft
 	}
 
-	quizID, err := w.repo.CreateQuizRecord(ctx, job.ChapterID, aggregateHash, title, len(result.Questions))
+	quizID, err := w.repo.CreateQuizRecordWithStatus(ctx, job.ChapterID, aggregateHash, title, len(result.Questions), quizStatus)
 	if err != nil {
 		return 0, "", err
 	}
 
 	explanationLang := ai.ExplanationDBCode(ai.DetectQuestionsLanguage(result.Questions, ai.LanguageAuto))
 	for i, question := range result.Questions {
-		qType := question.Type
-		if qType == "" {
-			qType = ai.QuestionTypeMCQ
-		}
-		questionID, err := w.repo.CreateQuestion(ctx, job.ChapterID, aggregateHash, question.Text, qType, sourceType, question.Difficulty)
-		if err != nil {
-			return 0, "", err
-		}
-		for idx, option := range question.Options {
-			isCorrect := idx == question.CorrectIndex
-			label := option.Label
-			if label == "" {
-				label = string(rune('A' + idx))
-			}
-			if err := w.repo.CreateQuestionOption(ctx, questionID, label, option.Text, isCorrect); err != nil {
-				return 0, "", err
-			}
-		}
-		if err := w.repo.CreateQuestionExplanation(ctx, questionID, question.Explanation, explanationLang); err != nil {
-			return 0, "", err
-		}
-		if err := w.repo.LinkQuestionToQuiz(ctx, quizID, questionID, i+1); err != nil {
+		if err := w.persistQuestion(ctx, quizID, job.ChapterID, aggregateHash, question, sourceType, explanationLang, i+1, extractMode); err != nil {
 			return 0, "", err
 		}
 	}
@@ -679,6 +652,40 @@ func (w *Worker) persistVisionQuiz(ctx context.Context, job ScanJob, jobID int64
 		return 0, "", err
 	}
 	return quizID, result.ChapterSummary, nil
+}
+
+// persistQuestion writes one generated/extracted question. In extract mode an
+// unknown correct answer (CorrectIndexUnknown) is stored with no option marked
+// correct and answer_status='unknown' so the reviewer can fill it in.
+func (w *Worker) persistQuestion(ctx context.Context, quizID int64, chapterID *int64, hash string, question ai.GeneratedQuestion, sourceType, explanationLang string, orderNo int, extractMode bool) error {
+	qType := question.Type
+	if qType == "" {
+		qType = ai.QuestionTypeMCQ
+	}
+	answerStatus := ai.AnswerStatusSet
+	answerKnown := question.CorrectIndex >= 0 && question.CorrectIndex < len(question.Options)
+	if extractMode && !answerKnown {
+		answerStatus = ai.AnswerStatusUnknown
+	}
+
+	questionID, err := w.repo.CreateQuestionWithAnswer(ctx, chapterID, hash, question.Text, qType, sourceType, question.Difficulty, answerStatus)
+	if err != nil {
+		return err
+	}
+	for idx, option := range question.Options {
+		isCorrect := answerKnown && idx == question.CorrectIndex
+		label := option.Label
+		if label == "" {
+			label = string(rune('A' + idx))
+		}
+		if err := w.repo.CreateQuestionOption(ctx, questionID, label, option.Text, isCorrect); err != nil {
+			return err
+		}
+	}
+	if err := w.repo.CreateQuestionExplanation(ctx, questionID, question.Explanation, explanationLang); err != nil {
+		return err
+	}
+	return w.repo.LinkQuestionToQuiz(ctx, quizID, questionID, orderNo)
 }
 
 func (w *Worker) deletePageObjects(ctx context.Context, outcomes []pageOutcome) {

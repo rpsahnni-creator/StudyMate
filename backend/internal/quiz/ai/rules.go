@@ -53,10 +53,12 @@ func languageRulesLines(lang string) string {
 // PageGroundingRules prevents hallucinated topics when reading scan images.
 func PageGroundingRules() string {
 	return `PAGE GROUNDING (mandatory — never break):
-- Read ONLY the attached page image(s). Every question, option, and answer MUST come from text or facts visible on that page.
-- Do NOT use general knowledge or other chapters (e.g. never ask about photosynthesis unless the page mentions it).
+- Read ONLY the attached page image(s). Every question, option, answer, and explanation MUST come word-for-word or fact-for-fact from text visible on that page. Treat the page as your ONLY source of truth.
+- ABSOLUTELY FORBIDDEN: using your own knowledge, memory, the internet, other chapters, or any topic not printed on THIS page. If a fact is not visible on the page, you may not use it.
+- Do NOT rephrase the chapter into a different subject. Never ask about photosynthesis, gravity, water cycle, electric circuits, fractions, etc. unless that exact topic is printed on this page.
+- UNREADABLE PAGE: if the image is blurry, dark, cropped, rotated, blank, or you cannot clearly read enough text to write real questions, do NOT invent anything. Instead return {"questions": [], "unreadable": true} so the student is asked to scan again.
+- Never fill the quiz with made-up or generic questions to reach a count. Fewer accurate, page-sourced questions is always better than any invented one.
 - Question count is FLEXIBLE: create only as many questions as the page content truly supports — do NOT pad with unrelated topics.
-- Prefer fewer accurate questions over many wrong ones.
 - Options must use words/concepts from the page, not random distractors from other subjects.`
 }
 

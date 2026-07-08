@@ -7,6 +7,7 @@ export type ScanJobStatusValue =
   | "processing"
   | "ocr_complete"
   | "needs_strategy"
+  | "review_ready"
   | "quiz_ready"
   | "completed"
   | "failed";
@@ -23,11 +24,17 @@ export interface ScanUploadStatus {
   quiz_id?: number;
   detected_page_type?: string;
   needs_strategy?: boolean;
+  needs_review?: boolean;
   chapter_summary?: string;
 }
 
 const READY_STATUSES = new Set<ScanJobStatusValue>(["quiz_ready", "completed"]);
-const TERMINAL_STATUSES = new Set<ScanJobStatusValue>(["quiz_ready", "completed", "failed"]);
+const TERMINAL_STATUSES = new Set<ScanJobStatusValue>([
+  "quiz_ready",
+  "completed",
+  "review_ready",
+  "failed",
+]);
 
 export function isJobReady(status: ScanJobStatusValue): boolean {
   return READY_STATUSES.has(status);
@@ -39,6 +46,12 @@ export function isJobTerminal(status: ScanJobStatusValue): boolean {
 
 export function isJobAwaitingStrategy(status: ScanUploadStatus): boolean {
   return status.status === "needs_strategy" || Boolean(status.needs_strategy);
+}
+
+// Question-scan jobs finish in review_ready: the quiz is drafted and the user
+// must review/edit/answer and publish before students can take it.
+export function isJobNeedsReview(status: ScanUploadStatus): boolean {
+  return status.status === "review_ready" || Boolean(status.needs_review);
 }
 
 export function jobStageLabel(status: ScanJobStatusValue): string {
@@ -54,6 +67,8 @@ export function jobStageLabel(status: ScanJobStatusValue): string {
       return "Generating quiz questions…";
     case "needs_strategy":
       return "Choose how to build your quiz…";
+    case "review_ready":
+      return "Review questions & answers…";
     case "quiz_ready":
     case "completed":
       return "Quiz ready!";

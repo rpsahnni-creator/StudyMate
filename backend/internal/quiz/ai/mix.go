@@ -47,14 +47,35 @@ func envCount(key string, fallback int) int {
 	return n
 }
 
-// VisionMaxQuestionsDefault is the soft upper cap for page-grounded vision quizzes.
+// VisionMaxQuestionsDefault is the hard upper cap for a full page-grounded vision
+// quiz (all pages combined). Keeps cost/latency bounded on large scans.
 func VisionMaxQuestionsDefault() int {
-	return envCount("AI_VISION_MAX_QUESTIONS", 25)
+	return envCount("AI_VISION_MAX_QUESTIONS", 60)
 }
 
 // VisionMinQuestionsDefault is the minimum acceptable vision output.
 func VisionMinQuestionsDefault() int {
 	n := envCount("AI_VISION_MIN_QUESTIONS", 1)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// VisionQuestionsPerPage is the target number of questions generated per scanned
+// page (content-flexible — fewer if the page has little text).
+func VisionQuestionsPerPage() int {
+	n := envCount("AI_VISION_QUESTIONS_PER_PAGE", 6)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// VisionPagesPerBatch controls how many page images are sent per Gemini call.
+// Smaller batches avoid JSON truncation and keep per-page grounding accurate.
+func VisionPagesPerBatch() int {
+	n := envCount("AI_VISION_PAGES_PER_BATCH", 3)
 	if n < 1 {
 		return 1
 	}

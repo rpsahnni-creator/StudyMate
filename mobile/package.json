@@ -5,8 +5,8 @@
   "scripts": {
     "start": "expo start --lan",
     "start:clear": "expo start -c --lan",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "doctor": "expo-doctor",
     "typecheck": "tsc --noEmit"
   },
@@ -42,5 +42,6 @@
   "devDependencies": {
     "@types/react": "~19.2.4",
     "typescript": "~6.0.3"
-  }
+  },
+  "version": "1.0.0"
 }

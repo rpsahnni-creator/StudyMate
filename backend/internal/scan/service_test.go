@@ -79,7 +79,17 @@ func (f *fakeRepository) CreateQuizRecord(ctx context.Context, chapterID *int64,
 	return 10, nil
 }
 
+func (f *fakeRepository) CreateQuizRecordWithStatus(ctx context.Context, chapterID *int64, contentHash string, title string, totalQuestions int, status string) (int64, error) {
+	f.createQuizCalls++
+	return 10, nil
+}
+
 func (f *fakeRepository) CreateQuestion(ctx context.Context, chapterID *int64, contentHash, questionText, questionType, sourceType, difficulty string) (int64, error) {
+	f.createQuestionCalls++
+	return 11, nil
+}
+
+func (f *fakeRepository) CreateQuestionWithAnswer(ctx context.Context, chapterID *int64, contentHash, questionText, questionType, sourceType, difficulty, answerStatus string) (int64, error) {
 	f.createQuestionCalls++
 	return 11, nil
 }

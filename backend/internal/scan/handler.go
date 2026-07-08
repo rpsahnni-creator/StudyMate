@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -352,8 +353,15 @@ func (h *Handler) GetUploadStatus(w http.ResponseWriter, r *http.Request) {
 		status.NeedsStrategy = true
 		status.Message = "mixed page detected — choose extract questions or generate from chapter"
 	}
+	if job.Status == ScanJobReviewReady {
+		status.NeedsReview = true
+		status.Message = "questions extracted — review, fill answers, and publish"
+	}
 	if job.Status == ScanJobFailed {
 		status.Message = "upload failed; retry is available"
+		if job.ErrorMessage != nil && strings.TrimSpace(*job.ErrorMessage) != "" {
+			status.LastError = strings.TrimSpace(*job.ErrorMessage)
+		}
 	}
 	if job.Status == ScanJobQuizReady || job.Status == ScanJobCompleted {
 		status.Message = "upload completed successfully"

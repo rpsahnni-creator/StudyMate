@@ -10,6 +10,7 @@ import {
 import { useLocalSearchParams } from "expo-router";
 import { getReview, type ReviewDetail, type ReviewQuestion } from "../../lib/api";
 import { colors, radius, shadow } from "../../lib/theme";
+import { SkyBackground } from "../../components/SkyBackground";
 
 export default function QuizReviewScreen() {
   const params = useLocalSearchParams<{ quizId: string; attemptId: string }>();
@@ -40,49 +41,55 @@ export default function QuizReviewScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.muted}>Loading review…</Text>
-      </View>
+      <SkyBackground>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.muted}>Loading review…</Text>
+        </View>
+      </SkyBackground>
     );
   }
 
   if (error || !review) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error ?? "No review found"}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => void loadReview()}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SkyBackground>
+        <View style={styles.center}>
+          <Text style={styles.error}>{error ?? "No review found"}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => void loadReview()}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SkyBackground>
     );
   }
 
   const correctCount = review.questions.filter((q) => q.status === "correct").length;
 
   return (
-    <FlatList
-      style={styles.list}
-      contentContainerStyle={styles.listContent}
-      data={review.questions}
-      keyExtractor={(q: ReviewQuestion) => String(q.id)}
-      ListHeaderComponent={
-        <View style={styles.summary}>
-          <Text style={styles.title}>Review</Text>
-          <Text style={styles.summaryText}>
-            Score {review.score.toFixed(1)}% · {correctCount} / {review.questions.length} correct
-          </Text>
-        </View>
-      }
-      renderItem={({ item, index }: { item: ReviewQuestion; index: number }) => (
-        <ReviewCard
-          question={item}
-          index={index}
-          expanded={!!expanded[item.id]}
-          onToggle={() => setExpanded((e) => ({ ...e, [item.id]: !e[item.id] }))}
-        />
-      )}
-    />
+    <SkyBackground>
+      <FlatList
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        data={review.questions}
+        keyExtractor={(q: ReviewQuestion) => String(q.id)}
+        ListHeaderComponent={
+          <View style={styles.summary}>
+            <Text style={styles.title}>Review</Text>
+            <Text style={styles.summaryText}>
+              Score {review.score.toFixed(1)}% · {correctCount} / {review.questions.length} correct
+            </Text>
+          </View>
+        }
+        renderItem={({ item, index }: { item: ReviewQuestion; index: number }) => (
+          <ReviewCard
+            question={item}
+            index={index}
+            expanded={!!expanded[item.id]}
+            onToggle={() => setExpanded((e) => ({ ...e, [item.id]: !e[item.id] }))}
+          />
+        )}
+      />
+    </SkyBackground>
   );
 }
 
@@ -151,9 +158,9 @@ function ReviewCard({
 }
 
 const styles = StyleSheet.create({
-  list: { flex: 1, backgroundColor: colors.bg },
+  list: { flex: 1, backgroundColor: "transparent" },
   listContent: { padding: 20, gap: 14 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24, backgroundColor: colors.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24, backgroundColor: "transparent" },
   muted: { color: colors.textMuted },
   summary: { marginBottom: 6 },
   title: { fontSize: 26, fontWeight: "800", color: colors.text, marginBottom: 6 },

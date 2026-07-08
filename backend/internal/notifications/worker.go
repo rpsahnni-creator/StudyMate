@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -200,7 +201,7 @@ func (w *NotificationWorker) processJob(ctx context.Context, job QueueJob) error
 		return w.recordJob(ctx, job, StatusFailed, err.Error())
 	}
 
-	if !w.checkRateLimit(ctx, job.UserID) {
+	if !w.checkRateLimit(ctx, job) {
 		w.logger.Warn("notification rate limited", "user_id", job.UserID)
 		return w.recordJob(ctx, job, StatusSkipped, "rate_limited")
 	}
@@ -209,8 +210,12 @@ func (w *NotificationWorker) processJob(ctx context.Context, job QueueJob) error
 	emailOK := false
 	var lastErr error
 
+	transactional := isTransactionalTemplate(job.TemplateID)
 	wantPush := channelWanted(job.Channels, ChannelPush) && prefs.PushEnabled
-	wantEmail := channelWanted(job.Channels, ChannelEmail) && prefs.EmailEnabled
+	wantEmail := channelWanted(job.Channels, ChannelEmail)
+	if !transactional {
+		wantEmail = wantEmail && prefs.EmailEnabled
+	}
 
 	if wantPush {
 		tokens, err := w.repo.GetActiveDeviceTokens(ctx, userUUID)
@@ -250,9 +255,10 @@ func (w *NotificationWorker) processJob(ctx context.Context, job QueueJob) error
 	}
 
 	if wantEmail {
-		email, err := w.repo.GetUserEmail(ctx, job.UserID)
+		email, err := w.resolveRecipientEmail(ctx, job)
 		if err != nil {
-			w.logger.Error("user email lookup failed", "user_id", job.UserID, "error", err)
+			w.logger.Error("recipient email lookup failed", "user_id", job.UserID, "error", err)
+			lastErr = err
 		} else if w.email != nil {
 			sendErr := w.email.SendTransactional(ctx, EmailRequest{
 				To:      email,
@@ -307,8 +313,16 @@ func (w *NotificationWorker) updateQueueDepth(ctx context.Context) {
 	metrics.SetNotificationQueueDepth(float64(mainLen + retryLen))
 }
 
-func (w *NotificationWorker) checkRateLimit(ctx context.Context, userID int64) bool {
-	key := fmt.Sprintf("%s%d", rateLimitKey, userID)
+func (w *NotificationWorker) checkRateLimit(ctx context.Context, job QueueJob) bool {
+	var key string
+	switch {
+	case job.UserID > 0:
+		key = fmt.Sprintf("%s%d", rateLimitKey, job.UserID)
+	case strings.TrimSpace(job.Data["email"]) != "":
+		key = fmt.Sprintf("%semail:%s", rateLimitKey, strings.ToLower(strings.TrimSpace(job.Data["email"])))
+	default:
+		return true
+	}
 	count, err := w.cache.Incr(ctx, key).Result()
 	if err != nil {
 		return true
@@ -317,6 +331,28 @@ func (w *NotificationWorker) checkRateLimit(ctx context.Context, userID int64) b
 		_ = w.cache.Expire(ctx, key, time.Hour).Err()
 	}
 	return count <= 10
+}
+
+func (w *NotificationWorker) resolveRecipientEmail(ctx context.Context, job QueueJob) (string, error) {
+	if email := strings.TrimSpace(job.Data["email"]); email != "" && job.UserID <= 0 {
+		return email, nil
+	}
+	if job.UserID > 0 {
+		if w.repo == nil {
+			return "", fmt.Errorf("notification repository not configured")
+		}
+		return w.repo.GetUserEmail(ctx, job.UserID)
+	}
+	return "", fmt.Errorf("no recipient email for notification job")
+}
+
+func isTransactionalTemplate(id TemplateID) bool {
+	switch id {
+	case TmplEmailOTP, TmplWelcome, TmplPasswordReset:
+		return true
+	default:
+		return false
+	}
 }
 
 func (w *NotificationWorker) scheduleRetry(ctx context.Context, job QueueJob, err error) error {

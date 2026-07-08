@@ -25,7 +25,9 @@ type Repository interface {
 	CreateGenerationLog(ctx context.Context, contentHash, modelName, promptVersion string, tokenUsage int, cacheHit bool, costEstimate float64) (int64, error)
 	UpdateGenerationLog(ctx context.Context, generationID int64, tokenUsage int, costEstimate float64) error
 	CreateQuizRecord(ctx context.Context, chapterID *int64, contentHash string, title string, totalQuestions int) (int64, error)
+	CreateQuizRecordWithStatus(ctx context.Context, chapterID *int64, contentHash string, title string, totalQuestions int, status string) (int64, error)
 	CreateQuestion(ctx context.Context, chapterID *int64, contentHash, questionText, questionType, sourceType, difficulty string) (int64, error)
+	CreateQuestionWithAnswer(ctx context.Context, chapterID *int64, contentHash, questionText, questionType, sourceType, difficulty, answerStatus string) (int64, error)
 	CreateQuestionOption(ctx context.Context, questionID int64, label, text string, isCorrect bool) error
 	CreateQuestionExplanation(ctx context.Context, questionID int64, explanation, language string) error
 	LinkQuestionToQuiz(ctx context.Context, quizID, questionID int64, orderNo int) error
@@ -157,11 +159,18 @@ func (r *postgresRepository) SaveContentHash(ctx context.Context, jobID int64, c
 }
 
 func (r *postgresRepository) CreateQuizRecord(ctx context.Context, chapterID *int64, contentHash string, title string, totalQuestions int) (int64, error) {
+	return r.CreateQuizRecordWithStatus(ctx, chapterID, contentHash, title, totalQuestions, "published")
+}
+
+func (r *postgresRepository) CreateQuizRecordWithStatus(ctx context.Context, chapterID *int64, contentHash string, title string, totalQuestions int, status string) (int64, error) {
+	if strings.TrimSpace(status) == "" {
+		status = "published"
+	}
 	var quizID int64
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO quizzes (chapter_id, content_hash, title, total_questions, generation_type, created_at)
-		VALUES ($1, $2, $3, $4, $5, now()) RETURNING id
-	`, chapterID, contentHash, title, totalQuestions, "ai").Scan(&quizID)
+		INSERT INTO quizzes (chapter_id, content_hash, title, total_questions, generation_type, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id
+	`, chapterID, contentHash, title, totalQuestions, "ai", status).Scan(&quizID)
 	if err != nil {
 		return 0, err
 	}
@@ -169,6 +178,10 @@ func (r *postgresRepository) CreateQuizRecord(ctx context.Context, chapterID *in
 }
 
 func (r *postgresRepository) CreateQuestion(ctx context.Context, chapterID *int64, contentHash, questionText, questionType, sourceType, difficulty string) (int64, error) {
+	return r.CreateQuestionWithAnswer(ctx, chapterID, contentHash, questionText, questionType, sourceType, difficulty, "set")
+}
+
+func (r *postgresRepository) CreateQuestionWithAnswer(ctx context.Context, chapterID *int64, contentHash, questionText, questionType, sourceType, difficulty, answerStatus string) (int64, error) {
 	if strings.TrimSpace(questionType) == "" {
 		questionType = "mcq"
 	}
@@ -178,11 +191,14 @@ func (r *postgresRepository) CreateQuestion(ctx context.Context, chapterID *int6
 	if strings.TrimSpace(difficulty) == "" {
 		difficulty = "medium"
 	}
+	if strings.TrimSpace(answerStatus) == "" {
+		answerStatus = "set"
+	}
 	var questionID int64
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO questions (chapter_id, content_hash, question_type, question_text, difficulty, source_type, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now()) RETURNING id
-	`, chapterID, contentHash, questionType, questionText, difficulty, sourceType, "active").Scan(&questionID)
+		INSERT INTO questions (chapter_id, content_hash, question_type, question_text, difficulty, source_type, status, answer_status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now()) RETURNING id
+	`, chapterID, contentHash, questionType, questionText, difficulty, sourceType, "active", answerStatus).Scan(&questionID)
 	if err != nil {
 		return 0, err
 	}

@@ -46,7 +46,7 @@ export default function ResetPasswordScreen() {
       <View style={styles.card}>
         <View style={styles.brandRow}>
           <LogoMark size={40} />
-          <Text style={styles.brand}>StudyApp</Text>
+          <Text style={styles.brand}>Kiji StudyMate</Text>
         </View>
 
         {done ? (

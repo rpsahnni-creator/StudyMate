@@ -22,11 +22,15 @@ const (
 
 // GeminiVisionGenerator reads textbook page images via Gemini multimodal API.
 type GeminiVisionGenerator struct {
-	apiKey     string
-	model      string
-	timeout    time.Duration
-	httpClient *http.Client
+	apiKey       string
+	model        string
+	timeout      time.Duration
+	httpClient   *http.Client
+	endpointBase string
 }
+
+// geminiVisionEndpointBase is the default Gemini generateContent base URL.
+const geminiVisionEndpointBase = "https://generativelanguage.googleapis.com/v1beta/models"
 
 func NewGeminiVisionGenerator(cfg AIConfig) (*GeminiVisionGenerator, error) {
 	if strings.TrimSpace(cfg.GeminiKey) == "" {
@@ -41,10 +45,11 @@ func NewGeminiVisionGenerator(cfg AIConfig) (*GeminiVisionGenerator, error) {
 		timeoutSec = visionTimeoutDefault
 	}
 	return &GeminiVisionGenerator{
-		apiKey:     cfg.GeminiKey,
-		model:      model,
-		timeout:    time.Duration(timeoutSec) * time.Second,
-		httpClient: &http.Client{Timeout: time.Duration(timeoutSec) * time.Second},
+		apiKey:       cfg.GeminiKey,
+		model:        model,
+		timeout:      time.Duration(timeoutSec) * time.Second,
+		httpClient:   &http.Client{Timeout: time.Duration(timeoutSec) * time.Second},
+		endpointBase: geminiVisionEndpointBase,
 	}, nil
 }
 
@@ -57,19 +62,125 @@ func (g *GeminiVisionGenerator) GenerateFromImages(ctx context.Context, req Visi
 		return nil, fmt.Errorf("no images provided for vision generation")
 	}
 	start := time.Now()
-	minCount := VisionMinQuestionsDefault()
-	maxCount := req.GenerateRequest.visionMaxQuestions()
+
+	numPages := len(req.Images)
+	perPage := VisionQuestionsPerPage()
+	maxCap := req.GenerateRequest.visionMaxQuestions()
+	overallTarget := perPage * numPages
+	if overallTarget > maxCap {
+		overallTarget = maxCap
+	}
+	if overallTarget < 1 {
+		overallTarget = 1
+	}
+	batchSize := VisionPagesPerBatch()
+
 	rules := req.explanationRules()
 
 	var (
-		questions      []GeneratedQuestion
-		chapterSummary string
-		tokensUsed     int
-		lastErr        error
+		allQuestions []GeneratedQuestion
+		summary      string
+		tokensUsed   int
+		anyReadable  bool
+		lastErr      error
+		seen         = make(map[string]struct{})
 	)
 
-	userPrompt := buildVisionUserPrompt(req.GenerateRequest)
+	for batchStart := 0; batchStart < numPages; batchStart += batchSize {
+		end := batchStart + batchSize
+		if end > numPages {
+			end = numPages
+		}
+		batchImages := req.Images[batchStart:end]
 
+		remaining := overallTarget - len(allQuestions)
+		if remaining <= 0 {
+			break
+		}
+		batchMax := perPage * len(batchImages)
+		if batchMax > remaining {
+			batchMax = remaining
+		}
+
+		qs, sum, tokens, unreadable, err := g.generateBatch(ctx, req.GenerateRequest, rules, batchImages, batchMax)
+		tokensUsed += tokens
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if unreadable {
+			continue
+		}
+		anyReadable = true
+		if summary == "" && sum != "" {
+			summary = sum
+		}
+		for _, q := range qs {
+			key := normalizeQuestionKey(q.Text)
+			if key != "" {
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+			}
+			allQuestions = append(allQuestions, q)
+			if len(allQuestions) >= overallTarget {
+				break
+			}
+		}
+	}
+
+	if len(allQuestions) == 0 {
+		if !anyReadable {
+			return nil, ErrPageUnreadable
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, fmt.Errorf("vision produced no page-grounded questions")
+	}
+
+	if len(allQuestions) > overallTarget {
+		allQuestions = allQuestions[:overallTarget]
+	}
+
+	return &GenerateResult{
+		Questions:      allQuestions,
+		ChapterSummary: summary,
+		TokensUsed:     tokensUsed,
+		ModelUsed:      g.model,
+		DurationMs:     time.Since(start).Milliseconds(),
+	}, nil
+}
+
+// generateBatch runs one Gemini vision call for a subset of page images and
+// returns page-grounded questions. unreadable=true means the model flagged the
+// batch as too blurry/blank to use (caller should skip, not fail).
+func (g *GeminiVisionGenerator) generateBatch(
+	ctx context.Context,
+	gen GenerateRequest,
+	rules ExplanationRules,
+	images []VisionImage,
+	maxCount int,
+) (questions []GeneratedQuestion, summary string, tokensUsed int, unreadable bool, err error) {
+	if maxCount < 1 {
+		maxCount = 1
+	}
+	minCount := VisionMinQuestionsDefault()
+	if minCount > maxCount {
+		minCount = maxCount
+	}
+
+	batchReq := gen
+	batchReq.VisionMaxQuestions = maxCount
+	userPrompt := buildVisionUserPrompt(batchReq)
+	chapter := strings.TrimSpace(gen.Chapter)
+	// Question-scan extracts printed questions from the page (answers may be
+	// absent). Allow unknown answers and skip chapter-topic grounding, which is
+	// tuned for generated chapter quizzes and would wrongly drop real questions.
+	extractMode := strings.TrimSpace(gen.ScanMode) == ScanModeExistingQuestions
+
+	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		prompt := userPrompt
 		if attempt > 0 {
@@ -78,56 +189,48 @@ Every question MUST have valid options: mcq=4 options, fill_blank=2-4 options wi
 
 %s`, minCount, maxCount, userPrompt)
 		}
-		content, tokens, err := g.callVision(ctx, prompt, rules, req.Images)
-		if err != nil {
-			lastErr = err
+		content, tokens, callErr := g.callVision(ctx, prompt, rules, images)
+		if callErr != nil {
+			lastErr = callErr
 			break
 		}
 		tokensUsed += tokens
 
-		parsed, summary, jsonErr := parseProviderResponse(content, 0)
+		if visionResponseUnreadable(content) {
+			return nil, "", tokensUsed, true, nil
+		}
+
+		parsed, sum, jsonErr := parseProviderResponse(content, 0, extractMode)
 		if jsonErr != nil {
 			lastErr = jsonErr
 			continue
 		}
-		chapter := strings.TrimSpace(req.GenerateRequest.Chapter)
-		grounded, rejected := FilterPageGroundedQuestions(parsed, chapter, summary)
-		if len(rejected) > 0 {
-			lastErr = fmt.Errorf("vision returned %d off-page question(s); retrying with stricter grounding", len(rejected))
-			if len(grounded) >= minCount {
+		if !extractMode {
+			grounded, rejected := FilterPageGroundedQuestions(parsed, chapter, sum)
+			if len(grounded) > 0 {
 				parsed = grounded
-				lastErr = nil
-			} else if attempt == 0 {
+			} else if len(rejected) > 0 && attempt == 0 {
+				lastErr = fmt.Errorf("batch returned %d off-page question(s); retrying with stricter grounding", len(rejected))
 				continue
 			}
 		}
-		if len(grounded) > 0 {
-			parsed = grounded
-		}
 		if len(parsed) < minCount {
-			lastErr = fmt.Errorf("vision returned %d questions (min %d) — page may be unreadable", len(parsed), minCount)
-			continue
+			lastErr = fmt.Errorf("batch returned %d questions (min %d)", len(parsed), minCount)
+			if attempt == 0 {
+				continue
+			}
 		}
 		if len(parsed) > maxCount {
 			parsed = parsed[:maxCount]
 		}
-		questions = parsed
-		chapterSummary = summary
-		lastErr = nil
-		break
+		return parsed, sum, tokensUsed, false, nil
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
-	}
+	return nil, "", tokensUsed, false, lastErr
+}
 
-	return &GenerateResult{
-		Questions:      questions,
-		ChapterSummary: chapterSummary,
-		TokensUsed:     tokensUsed,
-		ModelUsed:      g.model,
-		DurationMs:     time.Since(start).Milliseconds(),
-	}, nil
+func normalizeQuestionKey(text string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(text))), " ")
 }
 
 func (g *GeminiVisionGenerator) callVision(ctx context.Context, userPrompt string, rules ExplanationRules, images []VisionImage) (string, int, error) {
@@ -161,7 +264,11 @@ func (g *GeminiVisionGenerator) callVision(ctx context.Context, userPrompt strin
 		return "", 0, err
 	}
 
-	url := fmt.Sprintf(geminiEndpointTmpl, g.model, g.apiKey)
+	base := g.endpointBase
+	if base == "" {
+		base = geminiVisionEndpointBase
+	}
+	url := fmt.Sprintf("%s/%s:generateContent?key=%s", base, g.model, g.apiKey)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", 0, err

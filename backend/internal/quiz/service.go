@@ -11,21 +11,28 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	"studyapp/backend/internal/quiz/ai"
 )
 
 // Common service errors mapped to HTTP status codes by the handler.
 var (
-	ErrQuizNotFound     = errors.New("quiz not found")
-	ErrAttemptNotFound  = errors.New("attempt not found")
-	ErrAttemptForbidden = errors.New("attempt does not belong to user")
-	ErrAttemptNotDone   = errors.New("attempt is not completed")
+	ErrQuizNotFound      = errors.New("quiz not found")
+	ErrAttemptNotFound   = errors.New("attempt not found")
+	ErrAttemptForbidden  = errors.New("attempt does not belong to user")
+	ErrAttemptNotDone    = errors.New("attempt is not completed")
+	ErrQuizForbidden     = errors.New("quiz does not belong to user")
+	ErrQuizNotDraft      = errors.New("quiz is not an editable draft")
+	ErrDraftInvalid      = errors.New("draft is invalid")
+	ErrAnswersIncomplete = errors.New("every question needs a correct answer before publishing")
 )
 
 // Service holds quiz business logic backed by Postgres.
 type Service struct {
-	db     *pgxpool.Pool
-	cache  *redis.Client
-	logger *slog.Logger
+	db        *pgxpool.Pool
+	cache     *redis.Client
+	logger    *slog.Logger
+	explainer ai.Explainer
 }
 
 func NewService(db *pgxpool.Pool, logger *slog.Logger) *Service {
@@ -41,22 +48,33 @@ func (s *Service) WithCache(cache *redis.Client) *Service {
 	return s
 }
 
+// WithExplainer wires an AI explainer used when publishing scanned exams.
+func (s *Service) WithExplainer(e ai.Explainer) *Service {
+	s.explainer = e
+	return s
+}
+
 // GetQuiz returns the quiz with its questions and options, without answers.
 func (s *Service) GetQuiz(ctx context.Context, quizID, userID int64) (*QuizDetail, error) {
 	var detail QuizDetail
 	var subject, board *string
+	var status string
 	err := s.db.QueryRow(ctx, `
-		SELECT q.id, q.title, q.total_questions, b.subject, b.board
+		SELECT q.id, q.title, q.total_questions, q.status, b.subject, b.board
 		FROM quizzes q
 		LEFT JOIN chapters c ON c.id = q.chapter_id
 		LEFT JOIN books b ON b.id = c.book_id
 		WHERE q.id = $1
-	`, quizID).Scan(&detail.ID, &detail.Title, &detail.TotalQuestions, &subject, &board)
+	`, quizID).Scan(&detail.ID, &detail.Title, &detail.TotalQuestions, &status, &subject, &board)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrQuizNotFound
 	}
 	if err != nil {
 		return nil, err
+	}
+	// Unpublished (draft) scanned exams are only visible via the review endpoints.
+	if status == "draft" {
+		return nil, ErrQuizNotFound
 	}
 	detail.Subject = deref(subject)
 	detail.Board = deref(board)
@@ -123,6 +141,18 @@ func (s *Service) GetQuiz(ctx context.Context, quizID, userID int64) (*QuizDetai
 
 // CreateAttempt returns the existing in-progress attempt or creates a new one.
 func (s *Service) CreateAttempt(ctx context.Context, quizID, userID int64, startedAt time.Time) (*Attempt, error) {
+	var status string
+	err := s.db.QueryRow(ctx, `SELECT status FROM quizzes WHERE id = $1`, quizID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrQuizNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if status == "draft" {
+		return nil, ErrQuizNotFound
+	}
+
 	totalQuestions, err := s.quizQuestionCount(ctx, quizID)
 	if err != nil {
 		return nil, err

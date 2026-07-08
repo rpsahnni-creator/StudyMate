@@ -15,6 +15,7 @@ export default function QuizLayout() {
       <Stack.Screen name="[quizId]" options={{ title: "Quiz" }} />
       <Stack.Screen name="result" options={{ title: "Result", headerBackVisible: false }} />
       <Stack.Screen name="review" options={{ title: "Review" }} />
+      <Stack.Screen name="review-questions" options={{ title: "Review questions" }} />
     </Stack>
   );
 }

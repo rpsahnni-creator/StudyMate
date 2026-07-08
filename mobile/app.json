@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "StudyApp",
+    "name": "Kiji StudyMate",
     "slug": "studyapp",
     "version": "1.0.0",
     "scheme": "studyapp",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/images/icon.png",
-    "backgroundColor": "#6366f1",
+    "backgroundColor": "#0E0E12",
     "ios": {
       "bundleIdentifier": "com.kijitechnology.studyapp",
       "supportsTablet": false
@@ -17,7 +17,7 @@
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#6366f1"
+        "backgroundColor": "#0E0E12"
       }
     },
     "plugins": [
@@ -26,8 +26,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "StudyApp needs gallery access to upload textbook pages.",
-          "cameraPermission": "StudyApp needs camera access to scan textbook pages."
+          "photosPermission": "Kiji StudyMate needs gallery access to upload textbook pages.",
+          "cameraPermission": "Kiji StudyMate needs camera access to scan textbook pages."
         }
       ],
       "expo-secure-store",
@@ -37,7 +37,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#6366f1"
+          "backgroundColor": "#0E0E12"
         }
       ]
     ]
